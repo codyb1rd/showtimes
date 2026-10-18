@@ -1,0 +1,56 @@
+name: Build and publish showtimes
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # ~6 AM Pacific (5 AM in winter)
+    - cron: "0 19 * * *"   # ~noon Pacific
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write   # lets the keepalive step re-enable this workflow
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore ratings cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/showtimes
+          key: ratings-${{ github.run_id }}
+          restore-keys: ratings-
+      - name: Build page
+        run: python showtimes.py reno nv --no-open --out _site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      # GitHub switches off scheduled workflows in a public repo after 60 days with no
+      # repository activity. Re-enabling it on every run keeps the schedule alive.
+      - name: Keep schedule alive
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/pages.yml/enable"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

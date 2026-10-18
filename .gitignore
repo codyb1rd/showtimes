@@ -1,0 +1,4 @@
+_site/
+__pycache__/
+*.html
+!template.html
