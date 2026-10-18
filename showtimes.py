@@ -90,6 +90,15 @@ def resolve_date(label_date, earliest):
     return d.isoformat()
 
 
+def film_kind(slug):
+    """cinemaclock slugs end in the release year ('clue-1985') or '-event' for special
+    screenings. New = released this year or last; anything older is a re-release."""
+    y = re.search(r"-((?:19|20)\d\d)$", slug)
+    if not y:
+        return "event"
+    return "new" if int(y.group(1)) >= dt.date.today().year - 1 else "rerelease"
+
+
 def parse_theater_page(page, tid):
     movies, groups = {}, []
     blocks = re.split(r'<div id="moviecin', page)[1:]
@@ -128,6 +137,7 @@ def parse_theater_page(page, tid):
                 "score": score.group(1) + score.group(2) if score else "",
                 "week": week.group(1) if week else "",
                 "poster": poster.group(1) if poster else "",
+                "kind": film_kind(title.group(1)),
             }
         for fb in re.split(r'<div data-earliest-date="', b)[1:]:
             earliest = dt.datetime.strptime(fb[:8], "%Y%m%d").date()
@@ -147,7 +157,10 @@ def parse_theater_page(page, tid):
 
 
 CACHE = Path.home() / "Library" / "Caches" / "showtimes" / "ratings.json"
-HIT_TTL, MISS_TTL = 3 * 86400, 86400
+# Builds run twice a day; 20 h means a new release's score refreshes once a day (on the morning
+# build), a re-release's once a week. A miss is retried daily.
+TTL = {"new": 20 * 3600, "rerelease": 6.5 * 86400, "event": 6.5 * 86400}
+MISS_TTL = 20 * 3600
 
 
 def norm(title):
@@ -221,7 +234,7 @@ def add_ratings(movies, ex):
         for site, fn, args in (("rt", rt_lookup, (m["title"], year, m["cast"])),
                                ("lb", lb_lookup, (m["title"], year))):
             c = cache.get(f"{site}:{m['slug']}")
-            if c and now - c["t"] < (HIT_TTL if c["v"] else MISS_TTL):
+            if c and now - c["t"] < (TTL.get(m.get("kind"), TTL["new"]) if c["v"] else MISS_TTL):
                 m[site] = c["v"]
             else:
                 jobs[ex.submit(fn, *args)] = (mid, site)

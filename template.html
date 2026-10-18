@@ -65,17 +65,23 @@ h1 span { color: var(--accent); }
 .note { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft);
   border: 1px solid var(--accent); font-size: 14px; }
 .note.plain { background: var(--card); border-color: var(--line); }
-#mapwrap { margin: 2px 0 12px; }
-#map { height: 230px; border-radius: 12px; border: 1px solid var(--line); background: var(--line); z-index: 0; }
-.maptoggle { background: none; border: 0; color: var(--muted); font-size: 12.5px; padding: 2px 0; cursor: pointer; }
-.maptoggle:hover { color: var(--ink); }
+/* Filters on the left, a small square map beside them. */
+.area { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; margin: 12px 0 16px; }
+.areaL .sub { margin: 0 0 8px; }
+.areaL .toolbar { margin: 4px 0 0; }
+#map { width: 168px; height: 168px; border-radius: 12px; border: 1px solid var(--line); background: var(--line); z-index: 0; }
+.leaflet-control-attribution { font-size: 8px !important; line-height: 1.3; padding: 0 3px !important; }
 /* OpenStreetMap tiles are light only; darken them to sit in the dark theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
 }
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
 .leaflet-tooltip { font: 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-@media (max-width: 520px) { #map { height: 190px; } }
+@media (max-width: 520px) { #map { width: 112px; height: 112px; } .area { gap: 10px; } }
+.msec + .msec { margin-top: 30px; }
+.sech { font-size: 17px; margin: 0 0 12px; letter-spacing: -.01em; }
+.sech span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 4px; }
+.rt svg { width: 14px; height: 14px; flex: none; }
 
 main { padding: 0 0 60px; }
 .toolbar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; }
@@ -89,7 +95,6 @@ select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--
 .ratings a:hover { text-decoration: underline; }
 .rt.fresh { color: var(--fresh); } .rt.rotten { color: var(--rotten); } .lb { color: var(--lb); }
 .ratings .none { color: var(--muted); font-weight: 400; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; display: inline-block; }
 .lbdots { display: inline-flex; gap: 2px; }
 .lbdots i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 .lbdots i:nth-child(1) { background: #ff8000; } .lbdots i:nth-child(2) { background: #00e054; } .lbdots i:nth-child(3) { background: #40bcf4; }
@@ -175,9 +180,14 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16
 </header>
 <div class="wrap">
   <div id="notes"></div>
-  <div class="sub" id="updated"></div>
-  <div class="scroller" id="theaters" role="group" aria-label="Theater"></div>
-  <div id="mapwrap" hidden><div id="map"></div><button class="maptoggle" id="maptoggle"></button></div>
+  <div class="area">
+    <div class="areaL">
+      <div class="sub" id="updated"></div>
+      <div class="scroller" id="theaters" role="group" aria-label="Theater"></div>
+      <div id="toolbar"></div>
+    </div>
+    <div id="mapwrap" hidden><div id="map"></div></div>
+  </div>
   <main id="main"></main>
 </div>
 <footer>Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd · zip lookup by zippopotam.us · map © OpenStreetMap contributors.</footer>
@@ -212,7 +222,6 @@ const state = {
   view: store.get('view', 'movies'),
   sort: store.get('sort2', 'popular'),
   after: store.get('after', 0),
-  showMap: store.get('map', true),
   date: null, theater: null, q: '', movie: null,
   origin: null,       // {lat, lon, label}: where distances are measured from
   zip: null           // the zip or "City, ST" the viewer searched, when not a covered city
@@ -253,6 +262,9 @@ function metaLine(m, full) {
   const bits = [m.runtime, full ? m.genre : null, m.year].filter(Boolean).map(esc).join(' · ');
   return (m.rating ? `<span class="rating">${esc(m.rating)}</span>` : '') + bits;
 }
+// Small tomato (60%+) and green splat (below 60%) for the Tomatometer.
+const TOMATO = '<svg viewBox="0 0 16 16" aria-label="Fresh"><circle cx="8" cy="9.6" r="5.9" fill="#e4381f"/><ellipse cx="6" cy="7.8" rx="1.6" ry="1" fill="#fff" opacity=".35"/><path d="M8 4.4 6.9 2.6l.2 1.9-2.3-.8 1.5 1.6-2 .7 2.4.3L8 5.6l1.3.7 2.4-.3-2-.7 1.5-1.6-2.3.8.2-1.9z" fill="#3f9a2f"/></svg>';
+const SPLAT = '<svg viewBox="0 0 16 16" aria-label="Rotten"><path d="M8 1.6l1.1 2.9 2.8-1.5-.9 3 3.1.6-2.6 1.9 2.1 2.4-3.2-.3.2 3.2L8 11.9l-2.6 1.9.2-3.2-3.2.3 2.1-2.4-2.6-1.9 3.1-.6-.9-3 2.8 1.5z" fill="#5fa82e"/></svg>';
 function ratings(m, link) {
   const out = [];
   const wrap = (cls, url, inner) => link && url
@@ -260,7 +272,7 @@ function ratings(m, link) {
   if (m.rt) {
     const s = m.rt.score;
     out.push(s == null ? wrap('rt none', m.rt.url, 'RT —')
-      : wrap('rt ' + (s >= 60 ? 'fresh' : 'rotten'), m.rt.url, `<span class="dot"></span>${s}%`));
+      : wrap('rt ' + (s >= 60 ? 'fresh' : 'rotten'), m.rt.url, (s >= 60 ? TOMATO : SPLAT) + `${s}%`));
   }
   if (m.lb) out.push(m.lb.score == null ? wrap('lb none', m.lb.url, 'LB —')
     : wrap('lb', m.lb.url, `<span class="lbdots"><i></i><i></i><i></i></span>${m.lb.score.toFixed(1)}`));
@@ -315,19 +327,25 @@ function toolbar(count, noun) {
 function emptyMsg() {
   return `<div class="empty">${state.q ? 'No movies match “' + esc(state.q) + '”.' : 'No upcoming showings for this day with these filters.'}</div>`;
 }
+function setBar(html) { $('toolbar').innerHTML = html; }
 function renderGrid() {
   const byMovie = groupBy(visibleGroups(), 'mid');
-  const { mids, first } = sortMovies(byMovie);
-  const tiles = mids.map(mid => {
-    const m = DATA.movies[mid], gs = byMovie[mid];
-    const n = gs.reduce((k, g) => k + upcoming(g).length, 0);
-    const nT = new Set(gs.map(g => g.tid)).size;
-    const next = state.date === today ? `Next <b>${fmtTime(first[mid])}</b>` : `${n} showing${n > 1 ? 's' : ''}`;
-    const where = state.theater == null ? ` · ${nT} theater${nT > 1 ? 's' : ''}` : '';
+  const { mids } = sortMovies(byMovie);
+  setBar(toolbar(mids.length, mids.length === 1 ? 'movie' : 'movies'));
+  const tile = mid => {
+    const m = DATA.movies[mid];
+    // Screenings still to come that day, at the theaters and times currently shown.
+    const n = byMovie[mid].reduce((k, g) => k + upcoming(g).length, 0);
+    const label = `<b>${n}</b> screening${n === 1 ? '' : 's'}${state.date === today ? ' left today' : ''}`;
     return `<button class="tile" data-mid="${mid}">${art(m)}<h3>${esc(m.title)}</h3>
-      <div class="meta">${metaLine(m)}</div>${ratings(m, false)}<div class="next">${next}${where}</div></button>`;
-  }).join('');
-  return toolbar(mids.length, mids.length === 1 ? 'movie' : 'movies') + (tiles ? `<div class="grid">${tiles}</div>` : emptyMsg());
+      <div class="meta">${metaLine(m)}</div>${ratings(m, false)}<div class="next">${label}</div></button>`;
+  };
+  // Two sections: new releases (this year or last), then re-releases and special events.
+  const fresh = mids.filter(mid => (DATA.movies[mid].kind || 'new') === 'new');
+  const older = mids.filter(mid => (DATA.movies[mid].kind || 'new') !== 'new');
+  const section = (title, list) => list.length
+    ? `<section class="msec"><h2 class="sech">${title}<span>${list.length}</span></h2><div class="grid">${list.map(tile).join('')}</div></section>` : '';
+  return mids.length ? section('New releases', fresh) + section('Re-releases &amp; special events', older) : emptyMsg();
 }
 function renderDetail(mid) {
   const m = DATA.movies[mid];
@@ -362,7 +380,8 @@ function renderTheaters() {
       <div class="meta">${esc(t.address)} · ${fmtDist(t)}</div></div>
       <a class="btn" href="${esc(t.maps)}" target="_blank" rel="noopener">Directions</a></div>${body}</article>`;
   }).join('');
-  return toolbar(tids.length, tids.length === 1 ? 'theater' : 'theaters') + cards;
+  setBar(toolbar(tids.length, tids.length === 1 ? 'theater' : 'theaters'));
+  return cards;
 }
 
 function renderDates() {
@@ -381,6 +400,7 @@ function render() {
   const inDetail = state.movie && DATA.movies[state.movie];
   $('vMovies').setAttribute('aria-pressed', state.view === 'movies' || !!inDetail);
   $('vTheaters').setAttribute('aria-pressed', state.view === 'theaters' && !inDetail);
+  if (inDetail) setBar('');
   $('main').innerHTML = inDetail ? renderDetail(state.movie) : state.view === 'movies' ? renderGrid() : renderTheaters();
   styleMarkers();
 }
@@ -392,17 +412,11 @@ const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(
 function setupMap() {
   if (!window.L) return;              // offline or CDN blocked: the page works without the map
   $('mapwrap').hidden = false;
-  map = L.map('map', { scrollWheelZoom: false, zoomControl: true });
+  map = L.map('map', { scrollWheelZoom: false, zoomControl: false });
+  map.attributionControl.setPrefix(false);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
-  applyMapVisibility();
-}
-function applyMapVisibility() {
-  if (!map) return;
-  $('map').style.display = state.showMap ? '' : 'none';
-  $('maptoggle').textContent = state.showMap ? 'Hide map' : 'Show map';
-  if (state.showMap) setTimeout(() => { map.invalidateSize(); fitMap(); }, 0);
 }
 function placeMarkers() {
   if (!map) return;
@@ -422,7 +436,7 @@ function placeMarkers() {
   styleMarkers(); fitMap();
 }
 function fitMap() {
-  if (!map || !state.showMap || !DATA) return;
+  if (!map || !DATA) return;
   const pts = DATA.theaters.map(t => [t.lat, t.lon]);
   if (state.zip) pts.push([state.origin.lat, state.origin.lon]);
   if (pts.length) map.fitBounds(pts, { padding: [24, 24], maxZoom: 13 });
@@ -535,12 +549,11 @@ $('vTheaters').onclick = () => setView('theaters');
 $('q').addEventListener('input', e => { state.q = e.target.value; if (state.movie) location.hash = ''; else render(); });
 $('locform').addEventListener('submit', e => { e.preventDefault(); goTo($('loc').value); });
 $('loc').addEventListener('change', e => { if (CITIES.some(c => c.city === e.target.value)) goTo(e.target.value); });
-$('maptoggle').onclick = () => { state.showMap = !state.showMap; store.set('map', state.showMap); applyMapVisibility(); };
 $('main').addEventListener('click', e => {
   if (e.target.closest('#back')) return closeMovie();
   const t = e.target.closest('[data-mid]'); if (t) openMovie(t.dataset.mid);
 });
-$('main').addEventListener('change', e => {
+$('toolbar').addEventListener('change', e => {
   if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort2', state.sort); }
   if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
   render();
