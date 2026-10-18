@@ -4,28 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Movie Showtimes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root {
   --bg: #f6f5f3; --card: #ffffff; --ink: #1b1a19; --muted: #6b6762; --line: #e4e1dc;
   --chip: #ffffff; --chip-line: #d6d2cb; --accent: #b4321f; --accent-ink: #ffffff;
-  --accent-soft: #fbe9e5; --fresh: #c8321e; --rotten: #4f8a2b; --lb: #e07a1f;
+  --accent-soft: #fbe9e5; --fresh: #c8321e; --rotten: #4f8a2b; --lb: #e07a1f; --pin: #6b6762;
   --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04); --bar: rgba(246,245,243,.93);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121212; --card: #1c1c1c; --ink: #eeebe6; --muted: #a29d96; --line: #2c2b29;
     --chip: #232323; --chip-line: #3a3936; --accent: #ef6a4f; --accent-ink: #1a0d09;
-    --accent-soft: #3a1d16; --fresh: #f26b55; --rotten: #8cc063; --lb: #ff9a3c;
+    --accent-soft: #3a1d16; --fresh: #f26b55; --rotten: #8cc063; --lb: #ff9a3c; --pin: #a29d96;
     --shadow: none; --bar: rgba(18,18,18,.93);
   }
 }
 :root[data-theme="dark"] {
   --bg: #121212; --card: #1c1c1c; --ink: #eeebe6; --muted: #a29d96; --line: #2c2b29;
   --chip: #232323; --chip-line: #3a3936; --accent: #ef6a4f; --accent-ink: #1a0d09;
-  --accent-soft: #3a1d16; --fresh: #f26b55; --rotten: #8cc063; --lb: #ff9a3c;
+  --accent-soft: #3a1d16; --fresh: #f26b55; --rotten: #8cc063; --lb: #ff9a3c; --pin: #a29d96;
   --shadow: none; --bar: rgba(18,18,18,.93);
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -33,19 +35,21 @@ a { color: inherit; }
 button { font: inherit; color: inherit; }
 .wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
 
-header.top { position: sticky; top: 0; z-index: 5; background: var(--bar); backdrop-filter: blur(10px);
+header.top { position: sticky; top: 0; z-index: 1000; background: var(--bar); backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.titlerow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-top: 12px; }
-h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; }
+.titlerow { display: flex; align-items: center; gap: 10px; padding-top: 12px; }
+h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 h1 span { color: var(--accent); }
-.updated { color: var(--muted); font-size: 12.5px; }
-.controls { display: flex; gap: 8px; align-items: center; margin: 9px 0 7px; }
-.search { flex: 1; min-width: 0; height: 34px; border-radius: 17px; border: 1px solid var(--chip-line);
-  background: var(--chip); color: var(--ink); padding: 0 14px; font: inherit; }
-.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-.seg { display: inline-flex; border: 1px solid var(--chip-line); border-radius: 17px; overflow: hidden; flex: none; }
+.seg { display: inline-flex; border: 1px solid var(--chip-line); border-radius: 17px; overflow: hidden; flex: none; margin-left: auto; }
 .seg button { border: 0; background: var(--chip); font-size: 14px; padding: 0 13px; height: 32px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.controls { display: flex; gap: 8px; align-items: center; margin: 9px 0 7px; }
+.controls form { flex: 1; min-width: 0; display: flex; }
+.field { flex: 1; min-width: 0; height: 34px; border-radius: 17px; border: 1px solid var(--chip-line);
+  background: var(--chip); color: var(--ink); padding: 0 14px; font: inherit; }
+.field:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#loc { padding-left: 32px; background: var(--chip) no-repeat 11px 50% / 14px 14px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z'/%3E%3C/svg%3E"); }
 .scroller { display: flex; gap: 6px; overflow-x: auto; padding: 1px 0 8px; scrollbar-width: none; }
 .scroller::-webkit-scrollbar { display: none; }
 .pill { flex: none; border: 1px solid var(--chip-line); background: var(--chip); border-radius: 10px;
@@ -53,20 +57,33 @@ h1 span { color: var(--accent); }
 .pill small { display: block; font-size: 11px; color: var(--muted); }
 .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pill[aria-pressed="true"] small { color: inherit; opacity: .8; }
-.tchip { border-radius: 15px; padding: 4px 10px; font-size: 12.5px; }
-.tchip[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; opacity: .7; }
-.tchip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.tchip { border-radius: 15px; padding: 4px 11px; font-size: 13px; }
+.tchip .d { color: var(--muted); }
+.tchip[aria-pressed="true"] .d { color: inherit; opacity: .8; }
 
-.banner { margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft);
+.sub { color: var(--muted); font-size: 12.5px; margin: 12px 0 8px; }
+.note { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft);
   border: 1px solid var(--accent); font-size: 14px; }
-main { padding: 12px 0 60px; }
+.note.plain { background: var(--card); border-color: var(--line); }
+#mapwrap { margin: 2px 0 12px; }
+#map { height: 230px; border-radius: 12px; border: 1px solid var(--line); background: var(--line); z-index: 0; }
+.maptoggle { background: none; border: 0; color: var(--muted); font-size: 12.5px; padding: 2px 0; cursor: pointer; }
+.maptoggle:hover { color: var(--ink); }
+/* OpenStreetMap tiles are light only; darken them to sit in the dark theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+}
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+.leaflet-tooltip { font: 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+@media (max-width: 520px) { #map { height: 190px; } }
+
+main { padding: 0 0 60px; }
 .toolbar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; }
 .toolbar .count { margin-right: auto; }
 .toolbar label { display: inline-flex; align-items: center; gap: 6px; }
 select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--chip); border: 1px solid var(--chip-line);
   border-radius: 8px; padding: 4px 8px; }
 
-/* Ratings */
 .ratings { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; }
 .ratings a, .ratings span { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .ratings a:hover { text-decoration: underline; }
@@ -77,7 +94,6 @@ select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--
 .lbdots i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 .lbdots i:nth-child(1) { background: #ff8000; } .lbdots i:nth-child(2) { background: #00e054; } .lbdots i:nth-child(3) { background: #40bcf4; }
 
-/* Poster grid */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; }
 .tile { text-align: left; border: 0; background: none; padding: 0; cursor: pointer; min-width: 0;
   display: flex; flex-direction: column; align-self: start; }
@@ -97,9 +113,8 @@ select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--
 .rating { display: inline-block; border: 1px solid var(--chip-line); border-radius: 4px; padding: 0 4px;
   font-size: 11px; color: var(--ink); margin-right: 3px; vertical-align: 1px; line-height: 1.4; }
 
-/* Detail + cards */
 .back { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--accent);
-  font-size: 14px; padding: 4px 0; margin-bottom: 8px; cursor: pointer; }
+  font-size: 14px; padding: 4px 0; margin: 4px 0 8px; cursor: pointer; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   margin-bottom: 12px; overflow: hidden; }
 .hero { display: flex; gap: 16px; padding: 16px; }
@@ -114,8 +129,6 @@ select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--
 .vname a { font-weight: 600; text-decoration: none; font-size: 15px; }
 .vname a:hover { text-decoration: underline; }
 .dist { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-
-/* Compact time rows */
 .frow { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; align-items: baseline; padding: 3px 0; }
 .flabel { font-size: 12px; color: var(--muted); line-height: 1.25; }
 .flabel em { font-style: normal; opacity: .75; }
@@ -147,25 +160,34 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16
 <body>
 <header class="top">
   <div class="wrap">
-    <div class="titlerow"><h1>Showtimes <span id="city"></span></h1><div class="updated" id="updated"></div></div>
-    <div class="controls">
-      <input class="search" id="q" type="search" placeholder="Search movies" autocomplete="off">
+    <div class="titlerow"><h1>Showtimes <span id="city"></span></h1>
       <div class="seg" role="group" aria-label="View">
         <button id="vMovies" aria-pressed="true">Movies</button><button id="vTheaters" aria-pressed="false">Theaters</button>
       </div>
     </div>
+    <div class="controls">
+      <form id="locform" autocomplete="off"><input class="field" id="loc" list="citylist" type="search" placeholder="City or zip" enterkeyhint="go"></form>
+      <input class="field" id="q" type="search" placeholder="Search movies" autocomplete="off">
+    </div>
+    <datalist id="citylist"></datalist>
     <div class="scroller" id="dates" role="group" aria-label="Date"></div>
-    <div class="scroller" id="theaters" role="group" aria-label="Theaters"></div>
   </div>
 </header>
 <div class="wrap">
-  <div id="banner"></div>
+  <div id="notes"></div>
+  <div class="sub" id="updated"></div>
+  <div class="scroller" id="theaters" role="group" aria-label="Theater"></div>
+  <div id="mapwrap" hidden><div id="map"></div><button class="maptoggle" id="maptoggle"></button></div>
   <main id="main"></main>
 </div>
-<footer>Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd. Tap a time to buy tickets.</footer>
+<footer>Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd · zip lookup by zippopotam.us · map © OpenStreetMap contributors.</footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-const DATA = /*__DATA__*/null;
+/* Two modes. Local single-city build: DATA is embedded below. Public site: DATA is null,
+   and the page loads cities.json plus data/<city>.json beside it. */
+let DATA = /*__DATA__*/null;
+const EMBEDDED = DATA !== null;
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem('st:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -176,45 +198,44 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const isoLocal = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
 const today = isoLocal(new Date());
 const tomorrow = isoLocal(new Date(Date.now() + 864e5));
-const theaterById = Object.fromEntries(DATA.theaters.map(t => [t.id, t]));
-const allDates = [...new Set(DATA.groups.flatMap(g => Object.keys(g.days)))].sort();
-const futureDates = allDates.filter(d => d >= today);
-const dates = futureDates.length ? futureDates : allDates;
+function miles(a, b) {
+  const r = x => x * Math.PI / 180, dLat = r(b.lat - a.lat), dLon = r(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.sqrt(h));
+}
 
-const SORTS = { popular: 'Most showings', soonest: 'Starting soonest', rt: 'Rotten Tomatoes', lb: 'Letterboxd', az: 'A–Z' };
+const SORTS = { popular: 'Most showtimes', soonest: 'Starting soonest', rt: 'Rotten Tomatoes', lb: 'Letterboxd', az: 'A–Z' };
 const AFTER = [[0, 'Any time'], [12, '12 PM'], [15, '3 PM'], [17, '5 PM'], [19, '7 PM'], [21, '9 PM']];
 const state = {
   view: store.get('view', 'movies'),
-  sort: store.get('sort', 'popular'),
+  sort: store.get('sort2', 'popular'),
   after: store.get('after', 0),
-  date: dates[0],
-  hidden: new Set(store.get('hidden:' + DATA.slug, [])),
-  q: '',
-  movie: null
+  showMap: store.get('map', true),
+  date: null, theater: null, q: '', movie: null,
+  origin: null,       // {lat, lon, label}: where distances are measured from
+  zip: null           // the zip or "City, ST" the viewer searched, when not a covered city
 };
+let CITIES = [], theaterById = {}, dates = [], futureDates = [];
 
 /* ---------- formatting ---------- */
 function fmtTime(t) {
-  let h = Math.floor(t / 100) % 24; const m = t % 100, ap = h < 12 ? 'am' : 'pm';
-  return (h % 12 || 12) + ':' + pad(m) + ap;
+  const h = Math.floor(t / 100) % 24, m = t % 100;
+  return (h % 12 || 12) + ':' + pad(m) + (h < 12 ? 'am' : 'pm');
 }
-function minutes(t) { return Math.floor(t / 100) * 60 + t % 100; }
 function started(date, t) {
   if (date !== today) return date < today;
   const now = new Date();
-  return t < 2400 && minutes(t) < now.getHours() * 60 + now.getMinutes();
+  return t < 2400 && Math.floor(t / 100) * 60 + t % 100 < now.getHours() * 60 + now.getMinutes();
 }
-/* A showing is shown when it hasn't started and passes the "starts after" filter.
-   Times past midnight (2400+) count as late, so they pass any filter. */
+/* Shown when it hasn't started and passes "starts after". Times past midnight (2400+) count as late. */
 function keep(date, t) { return !started(date, t) && (t >= 2400 || t >= state.after * 100); }
 function upcoming(g) { return (g.days[state.date] || []).filter(([t]) => keep(state.date, t)).sort((a, b) => a[0] - b[0]); }
 
 const ACCESS = { 'closed captions': 'CC', 'audio description': 'AD', 'on-screen captions': 'Captions' };
 function fmtLabel(g) {
-  let f = (g.fmt || '').replace(/Standard auditorium\s*/i, '').replace(/with Eng\. subt\./i, 'Subtitled')
+  const f = (g.fmt || '').replace(/Standard auditorium\s*/i, '').replace(/with Eng\. subt\./i, 'Subtitled')
     .replace(/Motion Seats/i, '').replace(/\s*•\s*/g, ' · ').replace(/^ · | · $/g, '').trim();
   const extras = g.notes.join(', ').replace(/^Optional:\s*/i, '').split(/,\s*/).filter(Boolean)
     .map(x => ACCESS[x.toLowerCase()] || x);
@@ -226,7 +247,7 @@ function dateLabel(d) {
   return { top, sub: MON[m - 1] + ' ' + day };
 }
 function art(m, cls) {
-  return `<div class="art ${cls || ''}"${m.poster ? ` style="background-image:url('${m.poster}')"` : ''} role="img" aria-label="${esc(m.title)} poster"></div>`;
+  return `<div class="art ${cls || ''}"${m.poster ? ` style="background-image:url('${esc(m.poster)}')"` : ''} role="img" aria-label="${esc(m.title)} poster"></div>`;
 }
 function metaLine(m, full) {
   const bits = [m.runtime, full ? m.genre : null, m.year].filter(Boolean).map(esc).join(' · ');
@@ -241,10 +262,8 @@ function ratings(m, link) {
     out.push(s == null ? wrap('rt none', m.rt.url, 'RT —')
       : wrap('rt ' + (s >= 60 ? 'fresh' : 'rotten'), m.rt.url, `<span class="dot"></span>${s}%`));
   }
-  if (m.lb) {
-    out.push(m.lb.score == null ? wrap('lb none', m.lb.url, 'LB —')
-      : wrap('lb', m.lb.url, `<span class="lbdots"><i></i><i></i><i></i></span>${m.lb.score.toFixed(1)}`));
-  }
+  if (m.lb) out.push(m.lb.score == null ? wrap('lb none', m.lb.url, 'LB —')
+    : wrap('lb', m.lb.url, `<span class="lbdots"><i></i><i></i><i></i></span>${m.lb.score.toFixed(1)}`));
   return out.length ? `<div class="ratings">${out.join('')}</div>` : '';
 }
 function chips(times) {
@@ -256,32 +275,34 @@ function formatRows(groups) {
   return groups.map(g => [g, upcoming(g)]).filter(([, ts]) => ts.length)
     .map(([g, ts]) => `<div class="frow"><div class="flabel">${fmtLabel(g)}</div><div class="times">${chips(ts)}</div></div>`).join('');
 }
+const fmtDist = t => t.dist < 10 ? t.dist.toFixed(1) + ' mi' : Math.round(t.dist) + ' mi';
 
-/* ---------- data selection ---------- */
-function visibleGroups(ignoreSearch) {
-  const q = ignoreSearch ? '' : state.q.trim().toLowerCase();
-  return DATA.groups.filter(g => g.days[state.date] && !state.hidden.has(g.tid) && upcoming(g).length
-    && (!q || DATA.movies[g.mid].title.toLowerCase().includes(q)));
+/* ---------- selection ---------- */
+function visibleGroups() {
+  const q = state.q.trim().toLowerCase();
+  return DATA.groups.filter(g => g.days[state.date] && (state.theater == null || g.tid === state.theater)
+    && upcoming(g).length && (!q || DATA.movies[g.mid].title.toLowerCase().includes(q)));
 }
 const groupBy = (arr, k) => arr.reduce((o, x) => ((o[x[k]] ??= []).push(x), o), {});
 const byDist = (a, b) => theaterById[a].dist - theaterById[b].dist;
 
 function sortMovies(byMovie) {
-  const stats = {};
-  for (const [mid, gs] of Object.entries(byMovie)) {
-    const ts = gs.flatMap(upcoming);
-    stats[mid] = { n: ts.length, first: Math.min(...ts.map(([t]) => t)) };
-  }
+  // "Most showtimes" counts every showing that day at every theater in the area, regardless of
+  // the theater pick, time filter or what has already started — a stable "what's biggest" order.
+  const areaCount = {};
+  DATA.groups.forEach(g => { if (g.days[state.date]) areaCount[g.mid] = (areaCount[g.mid] || 0) + g.days[state.date].length; });
+  const first = {};
+  for (const [mid, gs] of Object.entries(byMovie)) first[mid] = Math.min(...gs.flatMap(upcoming).map(([t]) => t));
   const M = DATA.movies, title = (a, b) => M[a].title.localeCompare(M[b].title);
   const score = (m, k) => m[k] && m[k].score != null ? m[k].score : -1;
   const cmp = {
-    popular: (a, b) => stats[b].n - stats[a].n || title(a, b),
-    soonest: (a, b) => stats[a].first - stats[b].first || title(a, b),
+    popular: (a, b) => (areaCount[b] || 0) - (areaCount[a] || 0) || title(a, b),
+    soonest: (a, b) => first[a] - first[b] || title(a, b),
     rt: (a, b) => score(M[b], 'rt') - score(M[a], 'rt') || title(a, b),
     lb: (a, b) => score(M[b], 'lb') - score(M[a], 'lb') || title(a, b),
     az: title
-  }[state.sort];
-  return { mids: Object.keys(byMovie).sort(cmp), stats };
+  }[state.sort] || title;
+  return { mids: Object.keys(byMovie).sort(cmp), first };
 }
 
 /* ---------- views ---------- */
@@ -291,42 +312,43 @@ function toolbar(count, noun) {
     ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>` : ''}
     <label>Starts after <select id="after">${AFTER.map(([v, l]) => opt(v, l, state.after)).join('')}</select></label></div>`;
 }
-
+function emptyMsg() {
+  return `<div class="empty">${state.q ? 'No movies match “' + esc(state.q) + '”.' : 'No upcoming showings for this day with these filters.'}</div>`;
+}
 function renderGrid() {
   const byMovie = groupBy(visibleGroups(), 'mid');
-  const { mids, stats } = sortMovies(byMovie);
+  const { mids, first } = sortMovies(byMovie);
   const tiles = mids.map(mid => {
-    const m = DATA.movies[mid], s = stats[mid];
-    const nT = new Set(byMovie[mid].map(g => g.tid)).size;
-    const next = state.date === today ? `Next <b>${fmtTime(s.first)}</b>` : `${s.n} showing${s.n > 1 ? 's' : ''}`;
+    const m = DATA.movies[mid], gs = byMovie[mid];
+    const n = gs.reduce((k, g) => k + upcoming(g).length, 0);
+    const nT = new Set(gs.map(g => g.tid)).size;
+    const next = state.date === today ? `Next <b>${fmtTime(first[mid])}</b>` : `${n} showing${n > 1 ? 's' : ''}`;
+    const where = state.theater == null ? ` · ${nT} theater${nT > 1 ? 's' : ''}` : '';
     return `<button class="tile" data-mid="${mid}">${art(m)}<h3>${esc(m.title)}</h3>
-      <div class="meta">${metaLine(m)}</div>${ratings(m, false)}
-      <div class="next">${next} · ${nT} theater${nT > 1 ? 's' : ''}</div></button>`;
+      <div class="meta">${metaLine(m)}</div>${ratings(m, false)}<div class="next">${next}${where}</div></button>`;
   }).join('');
-  return toolbar(mids.length, mids.length === 1 ? 'movie' : 'movies') +
-    (tiles ? `<div class="grid">${tiles}</div>` : emptyMsg());
+  return toolbar(mids.length, mids.length === 1 ? 'movie' : 'movies') + (tiles ? `<div class="grid">${tiles}</div>` : emptyMsg());
 }
-
 function renderDetail(mid) {
   const m = DATA.movies[mid];
-  const gs = DATA.groups.filter(g => g.mid === mid && g.days[state.date] && !state.hidden.has(g.tid) && upcoming(g).length);
+  const gs = DATA.groups.filter(g => g.mid === mid && g.days[state.date] && (state.theater == null || g.tid === state.theater) && upcoming(g).length);
   const byT = groupBy(gs, 'tid');
   const venues = Object.keys(byT).sort(byDist).map(tid => {
     const t = theaterById[tid];
-    return `<div class="venue"><div class="vname"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a><span class="dist">${t.dist} mi</span></div>${formatRows(byT[tid])}</div>`;
+    return `<div class="venue"><div class="vname"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a><span class="dist">${fmtDist(t)}</span></div>${formatRows(byT[tid])}</div>`;
   }).join('');
+  const after = state.after ? ' after ' + AFTER.find(a => a[0] === state.after)[1] : '';
+  const where = state.theater != null ? ' at ' + esc(theaterById[state.theater].name) : '';
   return `<button class="back" id="back">‹ All movies</button>
     <article class="card"><div class="hero">${art(m)}<div>
-      <h2>${esc(m.title)}</h2><div class="meta">${metaLine(m, true)}</div>
-      ${ratings(m, true)}
+      <h2>${esc(m.title)}</h2><div class="meta">${metaLine(m, true)}</div>${ratings(m, true)}
       ${m.cast ? `<div class="cast">${esc(m.cast)}</div>` : ''}
       <a class="more" href="${esc(m.url)}" target="_blank" rel="noopener">Details &amp; trailer ›</a>
-    </div></div>${venues || `<div class="none">No upcoming showings ${state.date === today ? 'left today' : 'this day'}${state.after ? ' after ' + AFTER.find(a => a[0] === state.after)[1] : ''}.</div>`}</article>`;
+    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>`;
 }
-
 function renderTheaters() {
   const byT = groupBy(visibleGroups(), 'tid');
-  const tids = DATA.theaters.map(t => t.id).filter(id => !state.hidden.has(id));
+  const tids = state.theater != null ? [state.theater] : DATA.theaters.map(t => t.id);
   const cards = tids.map(tid => {
     const t = theaterById[tid], byM = groupBy(byT[tid] || [], 'mid');
     const mids = Object.keys(byM).sort((a, b) => DATA.movies[a].title.localeCompare(DATA.movies[b].title));
@@ -337,14 +359,10 @@ function renderTheaters() {
         ${formatRows(byM[mid])}</div></div>`;
     }).join('') : `<div class="none">${state.q ? 'No matching movies here.' : 'No upcoming showings.'}</div>`;
     return `<article class="card"><div class="thead"><div><h2><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a></h2>
-      <div class="meta">${esc(t.address)} · ${t.dist} mi</div></div>
+      <div class="meta">${esc(t.address)} · ${fmtDist(t)}</div></div>
       <a class="btn" href="${esc(t.maps)}" target="_blank" rel="noopener">Directions</a></div>${body}</article>`;
   }).join('');
   return toolbar(tids.length, tids.length === 1 ? 'theater' : 'theaters') + cards;
-}
-
-function emptyMsg() {
-  return `<div class="empty">${state.q ? 'No movies match “' + esc(state.q) + '”.' : 'No upcoming showings for this day with these filters.'}</div>`;
 }
 
 function renderDates() {
@@ -354,63 +372,209 @@ function renderDates() {
   }).join('');
 }
 function renderTheaterChips() {
-  $('theaters').innerHTML = DATA.theaters.map(t =>
-    `<button class="pill tchip" data-tid="${t.id}" aria-pressed="${!state.hidden.has(t.id)}" title="${esc(t.address)}">${esc(t.name)} · ${t.dist} mi</button>`).join('');
+  $('theaters').innerHTML = `<button class="pill tchip" data-tid="" aria-pressed="${state.theater == null}">All theaters</button>` +
+    DATA.theaters.map(t => `<button class="pill tchip" data-tid="${t.id}" aria-pressed="${state.theater === t.id}" title="${esc(t.address)}">${esc(t.name)} <span class="d">· ${fmtDist(t)}</span></button>`).join('');
+  const on = $('theaters').querySelector('[aria-pressed="true"]');
+  if (on && state.theater != null) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function render() {
   const inDetail = state.movie && DATA.movies[state.movie];
   $('vMovies').setAttribute('aria-pressed', state.view === 'movies' || !!inDetail);
   $('vTheaters').setAttribute('aria-pressed', state.view === 'theaters' && !inDetail);
   $('main').innerHTML = inDetail ? renderDetail(state.movie) : state.view === 'movies' ? renderGrid() : renderTheaters();
+  styleMarkers();
+}
+function renderAll() { renderDates(); renderTheaterChips(); render(); }
+
+/* ---------- map ---------- */
+let map = null, markers = {}, originMarker = null;
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function setupMap() {
+  if (!window.L) return;              // offline or CDN blocked: the page works without the map
+  $('mapwrap').hidden = false;
+  map = L.map('map', { scrollWheelZoom: false, zoomControl: true });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  applyMapVisibility();
+}
+function applyMapVisibility() {
+  if (!map) return;
+  $('map').style.display = state.showMap ? '' : 'none';
+  $('maptoggle').textContent = state.showMap ? 'Hide map' : 'Show map';
+  if (state.showMap) setTimeout(() => { map.invalidateSize(); fitMap(); }, 0);
+}
+function placeMarkers() {
+  if (!map) return;
+  Object.values(markers).forEach(m => m.remove());
+  if (originMarker) { originMarker.remove(); originMarker = null; }
+  markers = {};
+  DATA.theaters.forEach(t => {
+    markers[t.id] = L.circleMarker([t.lat, t.lon], { radius: 7, weight: 2 })
+      .bindTooltip(`${esc(t.name)} · ${fmtDist(t)}`, { direction: 'top', offset: [0, -6] })
+      .on('click', () => selectTheater(state.theater === t.id ? null : t.id))
+      .addTo(map);
+  });
+  if (state.zip) {
+    originMarker = L.circleMarker([state.origin.lat, state.origin.lon], { radius: 5, weight: 2, color: cssVar('--ink'), fillColor: cssVar('--bg'), fillOpacity: 1 })
+      .bindTooltip(esc(state.origin.label), { direction: 'top', offset: [0, -4] }).addTo(map);
+  }
+  styleMarkers(); fitMap();
+}
+function fitMap() {
+  if (!map || !state.showMap || !DATA) return;
+  const pts = DATA.theaters.map(t => [t.lat, t.lon]);
+  if (state.zip) pts.push([state.origin.lat, state.origin.lon]);
+  if (pts.length) map.fitBounds(pts, { padding: [24, 24], maxZoom: 13 });
+}
+function styleMarkers() {
+  if (!map) return;
+  const accent = cssVar('--accent'), pin = cssVar('--pin');
+  for (const [id, mk] of Object.entries(markers)) {
+    const on = state.theater === id, dim = state.theater != null && !on;
+    mk.setStyle({ color: on ? accent : pin, fillColor: on ? accent : pin, fillOpacity: dim ? .25 : .75, opacity: dim ? .5 : 1, radius: on ? 10 : 7 });
+    if (on) mk.bringToFront();
+  }
 }
 
-/* ---------- routing: #m/<id> opens a movie, so the browser Back button works ---------- */
-function readHash() { const m = location.hash.match(/^#m\/(\d+)/); state.movie = m ? m[1] : null; }
+/* ---------- city loading + location search ---------- */
+function setData(d, origin) {
+  DATA = d;
+  state.origin = origin || { lat: d.lat ?? d.theaters[0].lat, lon: d.lon ?? d.theaters[0].lon, label: d.city };
+  DATA.theaters.forEach(t => { t.dist = miles(state.origin, t); });
+  DATA.theaters.sort((a, b) => a.dist - b.dist);
+  theaterById = Object.fromEntries(DATA.theaters.map(t => [t.id, t]));
+  const all = [...new Set(DATA.groups.flatMap(g => Object.keys(g.days)))].sort();
+  futureDates = all.filter(d => d >= today);
+  dates = futureDates.length ? futureDates : all;
+  if (!dates.includes(state.date)) state.date = dates[0];
+  state.theater = null;
+  $('city').textContent = state.zip ? `near ${state.zip}` : DATA.city;
+  document.title = 'Showtimes · ' + (state.zip ? state.zip : DATA.city);
+  const gen = new Date(DATA.generated);
+  const from = state.zip ? ` · distances from ${esc(state.origin.label)}` : '';
+  $('updated').innerHTML = `${DATA.theaters.length} theaters within ${DATA.radius} mi of ${esc(DATA.city)}${from} · updated ${DOW[gen.getDay()]} ${fmtTime(gen.getHours() * 100 + gen.getMinutes())}`;
+  const notes = [];
+  const ageH = (Date.now() - gen.getTime()) / 36e5;
+  if (!futureDates.length) notes.push('These times are all in the past. The page needs a rebuild for current showtimes.');
+  else if (ageH > 36) notes.push(`These times were collected ${Math.round(ageH / 24)} days ago and may have changed.`);
+  if (DATA.failed.length) notes.push('Could not read: ' + DATA.failed.map(esc).join('; '));
+  $('notes').innerHTML = notes.map(n => `<div class="note">${n}</div>`).join('');
+  placeMarkers(); renderAll();
+}
+function locNote(html) { $('notes').insertAdjacentHTML('afterbegin', `<div class="note plain">${html}</div>`); }
+
+async function loadCity(slug, origin, zip) {
+  const res = await fetch(`data/${slug}.json`, { cache: 'no-cache' });
+  if (!res.ok) throw new Error('No data for ' + slug);
+  state.zip = zip || null;
+  setData(await res.json(), origin);
+  store.set('city', { slug, origin: origin || null, zip: zip || null });
+  const u = new URL(location.href);
+  u.search = zip ? '?near=' + encodeURIComponent(zip) : '?city=' + slug;
+  history.replaceState(null, '', u);
+}
+function nearestCity(p) {
+  return CITIES.map(c => ({ c, d: miles(p, c) })).sort((a, b) => a.d - b.d)[0];
+}
+async function geocode(text) {
+  const zip = text.match(/^\s*(\d{5})\s*$/);
+  if (zip) {
+    const r = await fetch(`https://api.zippopotam.us/us/${zip[1]}`);
+    if (!r.ok) return null;
+    const p = (await r.json()).places[0];
+    return { lat: +p.latitude, lon: +p.longitude, label: `${zip[1]} (${p['place name']}, ${p['state abbreviation']})`, zip: zip[1] };
+  }
+  const m = text.match(/^\s*(.+?)[,\s]+([A-Za-z]{2})\s*$/);
+  if (m) {
+    const r = await fetch(`https://api.zippopotam.us/us/${m[2].toLowerCase()}/${encodeURIComponent(m[1].trim().toLowerCase())}`);
+    if (!r.ok) return null;
+    const j = await r.json(), p = j.places[0];
+    return { lat: +p.latitude, lon: +p.longitude, label: `${j['place name']}, ${j['state abbreviation']}` };
+  }
+  return null;
+}
+async function goTo(text) {
+  const t = text.trim(); if (!t) return;
+  const norm = s => s.toLowerCase().replace(/[^a-z]/g, '');
+  const exact = CITIES.find(c => norm(c.city) === norm(t)) || CITIES.find(c => norm(c.city).startsWith(norm(t)) && norm(t).length >= 3);
+  if (exact && !/^\d/.test(t)) { $('loc').value = ''; $('loc').blur(); return loadCity(exact.slug); }
+  let place = null;
+  try { place = await geocode(t); } catch (e) {}
+  if (!place) {
+    $('notes').querySelectorAll('.plain').forEach(n => n.remove());
+    return locNote(`Couldn't find “${esc(t)}”. Try a 5-digit zip, or a city with its state like “Boise, ID”.`);
+  }
+  const { c, d } = nearestCity(place);
+  $('loc').value = ''; $('loc').blur();
+  await loadCity(c.slug, { lat: place.lat, lon: place.lon, label: place.label }, place.zip || place.label);
+  if (d > 40) locNote(`${esc(place.label)} isn't in a covered area. The nearest is <b>${esc(c.city)}</b>, ${Math.round(d)} mi away; distances are from ${esc(place.label)}.`);
+}
+
+/* ---------- routing: #m/<id> opens a movie, so Back works ---------- */
 let openedHere = false;
+function readHash() { const m = location.hash.match(/^#m\/(\d+)/); state.movie = m ? m[1] : null; }
 function openMovie(mid) { openedHere = true; location.hash = 'm/' + mid; }
 function closeMovie() { if (openedHere) { openedHere = false; history.back(); } else location.hash = ''; }
 window.addEventListener('hashchange', () => { readHash(); render(); window.scrollTo({ top: 0 }); });
 
-/* ---------- header + events ---------- */
-$('city').textContent = DATA.city;
-const gen = new Date(DATA.generated);
-$('updated').textContent = `Updated ${DOW[gen.getDay()]} ${MON[gen.getMonth()]} ${gen.getDate()}, ${fmtTime(gen.getHours() * 100 + gen.getMinutes())} · ${DATA.theaters.length} theaters within ${DATA.radius} mi`;
-const ageH = (Date.now() - gen.getTime()) / 36e5;
-const notes = [];
-if (!futureDates.length) notes.push('These times are all in the past. Rebuild the page for current showtimes.');
-else if (ageH > 36) notes.push(`These times were collected ${Math.round(ageH / 24)} days ago and may have changed. Rebuild for fresh times.`);
-if (DATA.failed.length) notes.push('Could not read: ' + DATA.failed.map(esc).join('; '));
-$('banner').innerHTML = notes.map(n => `<div class="banner">${n}</div>`).join('');
-
+/* ---------- events ---------- */
+function selectTheater(id) { state.theater = id; renderTheaterChips(); render(); }
 $('dates').addEventListener('click', e => {
   const b = e.target.closest('[data-date]'); if (!b) return;
   state.date = b.dataset.date; renderDates(); render();
 });
 $('theaters').addEventListener('click', e => {
   const b = e.target.closest('[data-tid]'); if (!b) return;
-  const id = b.dataset.tid;
-  state.hidden.has(id) ? state.hidden.delete(id) : state.hidden.add(id);
-  if (state.hidden.size === DATA.theaters.length) state.hidden.clear();
-  store.set('hidden:' + DATA.slug, [...state.hidden]);
-  renderTheaterChips(); render();
+  const id = b.dataset.tid || null;
+  selectTheater(id && state.theater === id ? null : id);
 });
-function setView(v) { state.view = v; store.set('view', v); if (state.movie) { location.hash = ''; } else render(); }
+function setView(v) { state.view = v; store.set('view', v); if (state.movie) location.hash = ''; else render(); }
 $('vMovies').onclick = () => setView('movies');
 $('vTheaters').onclick = () => setView('theaters');
 $('q').addEventListener('input', e => { state.q = e.target.value; if (state.movie) location.hash = ''; else render(); });
+$('locform').addEventListener('submit', e => { e.preventDefault(); goTo($('loc').value); });
+$('loc').addEventListener('change', e => { if (CITIES.some(c => c.city === e.target.value)) goTo(e.target.value); });
+$('maptoggle').onclick = () => { state.showMap = !state.showMap; store.set('map', state.showMap); applyMapVisibility(); };
 $('main').addEventListener('click', e => {
   if (e.target.closest('#back')) return closeMovie();
   const t = e.target.closest('[data-mid]'); if (t) openMovie(t.dataset.mid);
 });
 $('main').addEventListener('change', e => {
-  if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort', state.sort); }
+  if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort2', state.sort); }
   if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
   render();
 });
 
-readHash(); renderDates(); renderTheaterChips(); render();
+/* ---------- start ---------- */
+(async function start() {
+  readHash();
+  setupMap();
+  if (EMBEDDED) {
+    $('locform').hidden = true;
+    setData(DATA);
+    return;
+  }
+  try {
+    CITIES = (await (await fetch('cities.json', { cache: 'no-cache' })).json()).cities;
+  } catch (e) {
+    $('main').innerHTML = '<div class="empty">Could not load the city list.</div>';
+    return;
+  }
+  $('citylist').innerHTML = CITIES.map(c => `<option value="${esc(c.city)}">`).join('');
+  const params = new URLSearchParams(location.search);
+  const saved = store.get('city', null);
+  try {
+    if (params.get('near')) await goTo(params.get('near'));
+    else if (params.get('city') && CITIES.some(c => c.slug === params.get('city'))) await loadCity(params.get('city'));
+    else if (saved && CITIES.some(c => c.slug === saved.slug)) await loadCity(saved.slug, saved.origin, saved.zip);
+    else await loadCity(CITIES.some(c => c.slug === 'reno-nv') ? 'reno-nv' : CITIES[0].slug);
+  } catch (e) {
+    $('main').innerHTML = `<div class="empty">Could not load showtimes: ${esc(e.message)}</div>`;
+  }
+})();
 // Drop showings as they start, while the page is open.
-setInterval(() => { if (!document.querySelector('select:focus')) render(); }, 60000);
+setInterval(() => { if (DATA && !document.querySelector('select:focus')) render(); }, 60000);
 </script>
 </body>
 </html>

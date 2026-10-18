@@ -21,19 +21,20 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Restore ratings cache
+      - name: Restore ratings and poster cache
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/showtimes
           key: ratings-${{ github.run_id }}
           restore-keys: ratings-
-      - name: Build page
-        run: python showtimes.py reno nv --no-open --out _site/index.html
+      - name: Build site (every city in cities.txt)
+        run: python showtimes.py --site _site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

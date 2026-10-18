@@ -1,0 +1,54 @@
+# Cities the public site builds. One "City, ST" per line.
+# The 50 largest US cities by July 2025 Census Bureau estimate (via Wikipedia's
+# "List of United States cities by population"), plus Reno.
+Reno, NV
+New York, NY
+Los Angeles, CA
+Chicago, IL
+Houston, TX
+Phoenix, AZ
+Philadelphia, PA
+San Antonio, TX
+San Diego, CA
+Dallas, TX
+Fort Worth, TX
+Jacksonville, FL
+Austin, TX
+San Jose, CA
+Charlotte, NC
+Columbus, OH
+Indianapolis, IN
+San Francisco, CA
+Seattle, WA
+Denver, CO
+Nashville, TN
+Oklahoma City, OK
+Washington, DC
+El Paso, TX
+Las Vegas, NV
+Boston, MA
+Detroit, MI
+Louisville, KY
+Portland, OR
+Memphis, TN
+Baltimore, MD
+Milwaukee, WI
+Albuquerque, NM
+Fresno, CA
+Tucson, AZ
+Sacramento, CA
+Atlanta, GA
+Kansas City, MO
+Mesa, AZ
+Raleigh, NC
+Colorado Springs, CO
+Miami, FL
+Omaha, NE
+Virginia Beach, VA
+Long Beach, CA
+Oakland, CA
+Minneapolis, MN
+Bakersfield, CA
+Tulsa, OK
+Tampa, FL
+Aurora, CO

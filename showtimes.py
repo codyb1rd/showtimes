@@ -240,33 +240,59 @@ def add_ratings(movies, ex):
         pass
 
 
-def data_uri(url):
+POSTERS = CACHE.parent / "posters"
+
+
+def poster_bytes(mid, url):
+    """Poster image, cached on disk by movie id (posters don't change once a film is listed)."""
+    f = POSTERS / f"{mid}.jpg"
+    if f.exists():
+        return f.read_bytes()
     try:
         raw = fetch(BASE + url if url.startswith("/") else url, binary=True, timeout=15)
     except Exception:
-        return ""
-    kind = "png" if url.endswith(".png") else "jpeg"
-    return f"data:image/{kind};base64," + base64.b64encode(raw).decode()
-
-
-def build(slug, radius, no_ratings=False):
+        return b""
     try:
-        city_page = fetch(f"{BASE}/{slug}/movie-theaters")
-    except urllib.error.HTTPError as e:
-        sys.exit(f"No theater list for '{slug}' on cinemaclock ({e.code}). Check the city/state spelling.")
-    theaters = parse_theaters(city_page)
+        POSTERS.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(raw)
+    except Exception:
+        pass
+    return raw
+
+
+def city_area(slug, radius, cap):
+    """City page -> (display name, theaters within radius of the nearest one, at most `cap`)."""
+    page = fetch(f"{BASE}/{slug}/movie-theaters")
+    theaters = parse_theaters(page)
     if not theaters:
-        sys.exit(f"Found the page for '{slug}' but no theaters in it — the site layout may have changed.")
-    city_name = re.search(r"<title>[^<]*?(?:in|-)\s*([^<|]+?,\s*[A-Z]{2})", city_page)
-    city_name = city_name.group(1).strip() if city_name else slug.rsplit("-", 1)[0].title() + ", " + slug[-2:].upper()
+        raise ValueError("no theaters on the city page — the site layout may have changed")
+    name = re.search(r"<title>[^<]*?(?:in|-)\s*([^<|]+?,\s*[A-Z]{2})", page)
+    name = name.group(1).strip() if name else slug.rsplit("-", 1)[0].replace("-", " ").title() + ", " + slug[-2:].upper()
     centre = (theaters[0]["lat"], theaters[0]["lon"])
     for t in theaters:
         t["dist"] = round(miles(centre, (t["lat"], t["lon"])), 1)
-    theaters = [t for t in theaters if t["dist"] <= radius]
+    near = sorted((t for t in theaters if t["dist"] <= radius), key=lambda t: t["dist"])[:cap]
+    return name, centre, near
 
-    movies, groups, failed = {}, [], []
-    with cf.ThreadPoolExecutor(max_workers=6) as ex:
-        futs = {ex.submit(fetch, f"{BASE}/movie-theaters/{t['slug']}"): t for t in theaters}
+
+def build_cities(slugs, radius, cap, no_ratings=False, workers=4, log=print):
+    """Fetch every city's area, each theater page once, ratings once per movie.
+    Returns ({slug: city dict}, all movies, failures)."""
+    cities, failed = {}, []
+    with cf.ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(city_area, s, radius, cap): s for s in slugs}
+        for f in cf.as_completed(futs):
+            s = futs[f]
+            try:
+                name, centre, near = f.result()
+                cities[s] = {"slug": s, "city": name, "lat": centre[0], "lon": centre[1], "theaters": near}
+            except Exception as e:
+                failed.append(f"{s}: {e}")
+        log(f"{len(cities)} cities, fetching theater pages…")
+
+        unique = {t["slug"]: t for c in cities.values() for t in c["theaters"]}
+        parsed, movies = {}, {}
+        futs = {ex.submit(fetch, f"{BASE}/movie-theaters/{sl}"): t for sl, t in unique.items()}
         for f in cf.as_completed(futs):
             t = futs[f]
             try:
@@ -274,41 +300,110 @@ def build(slug, radius, no_ratings=False):
             except Exception as e:
                 failed.append(f"{t['name']}: {e}")
                 continue
-            movies.update({k: v for k, v in m.items() if k not in movies})
-            groups.extend(g)
-            t["count"] = sum(len(v) for x in g for v in x["days"].values())
+            parsed[t["slug"]] = g
+            for k, v in m.items():
+                movies.setdefault(k, v)
+        log(f"{len(parsed)} theaters, {len(movies)} movies; ratings and posters…")
 
-        posters = {mid: ex.submit(data_uri, m["poster"]) for mid, m in movies.items() if m["poster"]}
         if not no_ratings:
             add_ratings(movies, ex)
-        for mid, f in posters.items():
-            movies[mid]["poster"] = f.result()
+        posters = {mid: ex.submit(poster_bytes, mid, m["poster"]) for mid, m in movies.items() if m["poster"]}
+        images = {mid: f.result() for mid, f in posters.items()}
 
-    for t in theaters:
-        t["url"] = f"{BASE}/movie-theaters/{t['slug']}"
-        t["maps"] = f"https://www.google.com/maps/dir//{t['lat']},{t['lon']}"
     for m in movies.values():
         m["url"] = f"{BASE}/movies/{m['slug']}"
-    return {
-        "city": city_name, "slug": slug, "radius": radius,
-        "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),
-        "theaters": theaters, "movies": movies, "groups": groups, "failed": failed,
-        "tixBase": f"{BASE}/buy-tickets/",
-    }
+    generated = dt.datetime.now().astimezone().isoformat(timespec="minutes")
+    for c in cities.values():
+        groups = [g for t in c["theaters"] for g in parsed.get(t["slug"], [])]
+        for t in c["theaters"]:
+            t["url"] = f"{BASE}/movie-theaters/{t['slug']}"
+            t["maps"] = f"https://www.google.com/maps/dir//{t['lat']},{t['lon']}"
+        mids = {g["mid"] for g in groups}
+        c.update({
+            "radius": radius, "generated": generated, "groups": groups,
+            "movies": {mid: dict(movies[mid]) for mid in mids},
+            "failed": [x for x in failed if any(x.startswith(t["name"] + ":") for t in c["theaters"])],
+            "tixBase": f"{BASE}/buy-tickets/",
+        })
+    return cities, images, failed
+
+
+def summary(c):
+    shows = sum(len(v) for g in c["groups"] for v in g["days"].values())
+    rated = sum(1 for m in c["movies"].values() if m.get("rt") or m.get("lb"))
+    return (f"{c['city']}: {len(c['theaters'])} theaters, {len(c['movies'])} movies, {shows} showtimes, "
+            f"{rated} matched to RT/Letterboxd")
+
+
+def write_site(out_dir, cities, images, order):
+    """Multi-city site: index.html (the app), cities.json, data/<slug>.json, posters/<id>.jpg."""
+    out_dir = Path(out_dir)
+    (out_dir / "data").mkdir(parents=True, exist_ok=True)
+    (out_dir / "posters").mkdir(exist_ok=True)
+    for mid, raw in images.items():
+        if raw:
+            (out_dir / "posters" / f"{mid}.jpg").write_bytes(raw)
+    index = []
+    for slug in order:
+        c = cities.get(slug)
+        if not c:
+            continue
+        for mid, m in c["movies"].items():
+            m["poster"] = f"posters/{mid}.jpg" if images.get(mid) else ""
+        (out_dir / "data" / f"{slug}.json").write_text(json.dumps(c, separators=(",", ":")))
+        index.append({"slug": slug, "city": c["city"], "lat": c["lat"], "lon": c["lon"],
+                      "theaters": len(c["theaters"]), "movies": len(c["movies"])})
+    (out_dir / "cities.json").write_text(json.dumps(
+        {"generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"), "cities": index},
+        separators=(",", ":")))
+    (out_dir / "index.html").write_text(TEMPLATE.read_text())
+
+
+def read_city_list(path):
+    slugs = []
+    for line in Path(path).read_text().splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            slugs.append(city_slug(line.replace(",", " ").split()))
+    return slugs
 
 
 def main():
     ap = argparse.ArgumentParser(description="Movie showtimes page for a city (default Reno, NV).")
     ap.add_argument("city", nargs="*", help="city and two-letter state, e.g. reno nv")
     ap.add_argument("--radius", type=float, default=20, help="miles from the city's nearest theater (default 20)")
+    ap.add_argument("--max-theaters", type=int, default=25, help="cap on theaters per city, nearest first (default 25)")
     ap.add_argument("--out", help="output HTML path")
     ap.add_argument("--no-open", action="store_true", help="don't open the page in the browser")
     ap.add_argument("--json", action="store_true", help="print the data as JSON instead of building a page")
     ap.add_argument("--no-ratings", action="store_true", help="skip Rotten Tomatoes / Letterboxd lookups")
+    ap.add_argument("--site", metavar="DIR", help="build the multi-city site into DIR (cities from --cities)")
+    ap.add_argument("--cities", default=str(HERE / "cities.txt"), help="city list for --site, one 'City, ST' per line")
     a = ap.parse_args()
 
+    if a.site:
+        order = read_city_list(a.cities)
+        cities, images, failed = build_cities(order, a.radius, a.max_theaters, a.no_ratings)
+        write_site(a.site, cities, images, order)
+        for s in order:
+            if s in cities:
+                print(summary(cities[s]))
+        for f in failed:
+            print(f"  could not read {f}")
+        print(f"{len(cities)}/{len(order)} cities written to {a.site}")
+        return
+
     slug = city_slug(a.city)
-    data = build(slug, a.radius, a.no_ratings)
+    try:
+        cities, images, failed = build_cities([slug], a.radius, a.max_theaters, a.no_ratings, log=lambda *_: None)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"Could not reach cinemaclock for '{slug}' ({e.code}).")
+    if slug not in cities:
+        sys.exit(f"No theater list for '{slug}' on cinemaclock. Check the city/state spelling.\n  {'; '.join(failed)}")
+    data = cities[slug]
+    for mid, m in data["movies"].items():
+        raw = images.get(mid)
+        m["poster"] = "data:image/jpeg;base64," + base64.b64encode(raw).decode() if raw else ""
     if a.json:
         print(json.dumps(data, indent=1))
         return
@@ -316,11 +411,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
     out.write_text(TEMPLATE.read_text().replace("/*__DATA__*/null", payload))
-
-    shows = sum(len(v) for g in data["groups"] for v in g["days"].values())
-    rated = sum(1 for m in data["movies"].values() if m.get("rt") or m.get("lb"))
-    print(f"{data['city']}: {len(data['theaters'])} theaters, {len(data['movies'])} movies, {shows} showtimes, "
-          f"{rated} matched to RT/Letterboxd")
+    print(summary(data))
     for f in data["failed"]:
         print(f"  could not read {f}")
     print(out)
