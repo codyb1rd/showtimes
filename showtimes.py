@@ -19,6 +19,7 @@ import math
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -32,11 +33,21 @@ MONTHS = {m: i for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
 
 
-def fetch(url, binary=False, timeout=20):
+def fetch(url, binary=False, timeout=20, tries=3):
+    """GET with retries: cinemaclock sometimes cuts a page off mid-transfer (IncompleteRead).
+    A 404 or other HTTP error is a real answer and is not retried."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read()
-    return data if binary else data.decode("utf-8", "replace")
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = r.read()
+            return data if binary else data.decode("utf-8", "replace")
+        except urllib.error.HTTPError:
+            raise
+        except Exception:
+            if attempt == tries - 1:
+                raise
+            time.sleep(2 * (attempt + 1))
 
 
 def text(s):
