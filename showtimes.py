@@ -20,6 +20,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,21 +30,25 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, 
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / "template.html"
 OUT_DIR = Path.home() / "Claude" / "Personal" / "diagrams"
+RETRY_CODES = {429, 500, 502, 503, 504}
 MONTHS = {m: i for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
 
 
 def fetch(url, binary=False, timeout=20, tries=3):
     """GET with retries: cinemaclock sometimes cuts a page off mid-transfer (IncompleteRead).
-    A 404 or other HTTP error is a real answer and is not retried."""
+    "Too many requests" (429) and server-side errors (5xx) are temporary, so they are retried
+    too. A 404 or other HTTP error is a real answer and is not retried."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     for attempt in range(tries):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = r.read()
             return data if binary else data.decode("utf-8", "replace")
-        except urllib.error.HTTPError:
-            raise
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_CODES or attempt == tries - 1:
+                raise
+            time.sleep(2 * (attempt + 1))
         except Exception:
             if attempt == tries - 1:
                 raise
@@ -174,52 +179,72 @@ TTL = {"new": 20 * 3600, "rerelease": 6.5 * 86400, "event": 6.5 * 86400}
 MISS_TTL = 20 * 3600
 
 
-def norm(title):
-    t = html.unescape(title).lower().replace("&", "and")
-    return re.sub(r"[^a-z0-9]+", "", t)
-
-
-def lb_slug(title):
+def slugify(title, sep):
+    """Film title -> address slug as the score sites write it. Accents are dropped
+    ("Amélie" -> amelie), as are apostrophes and full stops."""
     t = html.unescape(title).lower().replace("&", "and")
     t = re.sub(r"['’.]", "", t)
-    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")
+    t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", sep, t).strip(sep)
 
 
 def year_ok(found, want):
     return found.isdigit() and abs(int(found) - want) <= 1
 
 
-def rt_lookup(title, year, cast):
-    """Rotten Tomatoes Tomatometer via its search page. Match on title + year (±1);
-    for a near-miss title, accept only when a lead's surname is in RT's cast list."""
-    q = urllib.request.quote(html.unescape(title))
-    page = fetch(f"https://www.rottentomatoes.com/search?search={q}").replace("\n", " ")
-    surnames = [n.split()[-1].lower() for n in re.split(r" & |, ", cast.replace("by ", "")) if n.split()]
-    best = None
-    for row in re.findall(r"<search-page-media-row(.*?)</search-page-media-row>", page, re.S):
-        y = re.search(r'release-year="(\d*)"', row)
-        s = re.search(r'tomatometer-score="(\d*)"', row)
-        a = re.search(r'href="(https://www\.rottentomatoes\.com/m/[^"]+)"[^>]*data-qa="info-name"[^>]*>\s*([^<]+)', row)
-        if not (y and a and year_ok(y.group(1), year)):
+# A score site that blocks or rate-limits the build (403, 429, or a 5xx that outlasted fetch's
+# retries) is skipped for the rest of that build rather than asked hundreds more times. Its
+# lookups raise, so add_ratings caches nothing and the next build tries again.
+DOWN = set()
+
+
+def page_or_none(site, url):
+    """The page, or None when that address doesn't exist (404/410). Any other failure raises."""
+    if site in DOWN:
+        raise RuntimeError(f"{site} skipped for this build")
+    try:
+        return fetch(url)
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return None
+        DOWN.add(site)
+        raise
+
+
+def rt_lookup(title, year):
+    """Rotten Tomatoes Tomatometer, plus RT's Fandango link (every theater showing the film).
+    RT's robots.txt disallows /search, so like Letterboxd this tries the film address with the
+    year suffix, then without, and accepts only when the page's release year matches (±1)."""
+    base = slugify(title, "_")
+    bare = re.sub(r"^(the|a|an)_", "", base)   # RT often drops a leading article: /m/killing
+    tries = [f"{base}_{year}", base, bare, f"{bare}_{year}", f"{base}_{year - 1}", f"{base}_{year + 1}"]
+    for slug in dict.fromkeys(tries):           # in order, without repeats
+        url = f"https://www.rottentomatoes.com/m/{slug}"
+        page = page_or_none("rt", url)
+        if page is None:
             continue
-        rcast = (re.search(r'cast="([^"]*)"', row) or [None, ""])[1].lower()
-        exact = norm(a.group(2)) == norm(title)
-        if exact or any(n in rcast for n in surnames):
-            best = {"score": int(s.group(1)) if s and s.group(1) else None, "url": a.group(1)}
-            if exact:
-                break
-    return best
+        # releaseYear is in the Fandango block (films on Fandango) and can be a re-release's year;
+        # dateCreated is the film's own release date, in every page's schema.org data. Either fits.
+        years = [m.group(1) for m in (re.search(r'"releaseYear":"(\d{4})"', page),
+                                      re.search(r'"dateCreated":"(\d{4})-', page)) if m]
+        if not any(year_ok(y, year) for y in years):
+            continue
+        s = re.search(r'"criticsScore":\{[^}]*?"scorePercent":"(\d+)%"', page)
+        canon = re.search(r'<link rel="canonical" href="([^"]+)"', page)
+        tix = re.search(r'"showtimesUrl":"(https://www\.fandango\.com/[^"?]+)', page)
+        return {"score": int(s.group(1)) if s else None, "url": canon.group(1) if canon else url,
+                "tix": tix.group(1) if tix else ""}
+    return None
 
 
 def lb_lookup(title, year):
     """Letterboxd average (out of 5). Search is blocked, so try the film address with the
     year suffix, then without, and accept only when the page's year matches (±1)."""
-    base = lb_slug(title)
+    base = slugify(title, "-")
     for slug in (f"{base}-{year}", base):
         url = f"https://letterboxd.com/film/{slug}/"
-        try:
-            page = fetch(url)
-        except urllib.error.HTTPError:
+        page = page_or_none("lb", url)
+        if page is None:
             continue
         y = re.search(r'og:title" content="[^"]*\((\d{4})\)', page)
         if not (y and year_ok(y.group(1), year)):
@@ -227,6 +252,11 @@ def lb_lookup(title, year):
         r = re.search(r'twitter:data2" content="([\d.]+) out of 5', page)
         return {"score": float(r.group(1)) if r else None, "url": url}
     return None
+
+
+# Cache key prefix per site. Changing one makes every cached entry for that site look up again on
+# the next build: "rt2" since RT entries gained the Fandango link ("tix").
+CACHE_KEY = {"rt": "rt2", "lb": "lb"}
 
 
 def add_ratings(movies, ex):
@@ -242,9 +272,9 @@ def add_ratings(movies, ex):
         if not y:
             continue  # "-event" listings (opera, anime events) have no film to match
         year = int(y.group(1))
-        for site, fn, args in (("rt", rt_lookup, (m["title"], year, m["cast"])),
+        for site, fn, args in (("rt", rt_lookup, (m["title"], year)),
                                ("lb", lb_lookup, (m["title"], year))):
-            c = cache.get(f"{site}:{m['slug']}")
+            c = cache.get(f"{CACHE_KEY[site]}:{m['slug']}")
             if c and now - c["t"] < (TTL.get(m.get("kind"), TTL["new"]) if c["v"] else MISS_TTL):
                 m[site] = c["v"]
             else:
@@ -256,7 +286,7 @@ def add_ratings(movies, ex):
         except Exception:
             continue  # network hiccup: leave blank, don't cache
         movies[mid][site] = v
-        cache[f"{site}:{movies[mid]['slug']}"] = {"t": now, "v": v}
+        cache[f"{CACHE_KEY[site]}:{movies[mid]['slug']}"] = {"t": now, "v": v}
     try:
         CACHE.parent.mkdir(parents=True, exist_ok=True)
         CACHE.write_text(json.dumps(cache))
@@ -402,18 +432,28 @@ def main():
     ap.add_argument("--json", action="store_true", help="print the data as JSON instead of building a page")
     ap.add_argument("--no-ratings", action="store_true", help="skip Rotten Tomatoes / Letterboxd lookups")
     ap.add_argument("--site", metavar="DIR", help="build the multi-city site into DIR (cities from --cities)")
+    ap.add_argument("--min-cities", type=int, metavar="N",
+                    help="with --site: fail without writing anything if fewer than N cities load "
+                         "(default: 90%% of the list), so a broken scrape can't replace a good site")
     ap.add_argument("--cities", default=str(HERE / "cities.txt"), help="city list for --site, one 'City, ST' per line")
     a = ap.parse_args()
 
     if a.site:
         order = read_city_list(a.cities)
         cities, images, failed = build_cities(order, a.radius, a.max_theaters, a.no_ratings)
+        for f in failed:
+            print(f"  could not read {f}")
+        # A city counts only if it came back with showtimes: a theater-page redesign or block
+        # leaves every city listed but empty, which is the failure this guard is for.
+        need = a.min_cities if a.min_cities is not None else math.ceil(0.9 * len(order))
+        loaded = sum(1 for c in cities.values() if c["groups"])
+        if loaded < need:
+            sys.exit(f"Only {loaded}/{len(order)} cities loaded with showtimes (need {need}); "
+                     f"nothing written. The source site's layout may have changed.")
         write_site(a.site, cities, images, order)
         for s in order:
             if s in cities:
                 print(summary(cities[s]))
-        for f in failed:
-            print(f"  could not read {f}")
         print(f"{len(cities)}/{len(order)} cities written to {a.site}")
         return
 
