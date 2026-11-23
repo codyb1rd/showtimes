@@ -120,6 +120,8 @@ main { padding: 0 0 60px; }
 .toolbar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; }
 .toolbar .count { margin-right: auto; }
 .toolbar label { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar .chkbox { cursor: pointer; }
+.toolbar .chkbox input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--chip); border: 1px solid var(--chip-line);
   border-radius: 8px; padding: 4px 8px; }
 
@@ -275,11 +277,12 @@ function miles(a, b) {
   return 3958.8 * 2 * Math.asin(Math.sqrt(h));
 }
 
-const SORTS = { popular: 'Most showtimes', soonest: 'Starting soonest', rt: 'Rotten Tomatoes', lb: 'Letterboxd', az: 'A–Z' };
+const SORTS = { smart: 'Smart sort', popular: 'Most showtimes', soonest: 'Starting soonest', rt: 'Rotten Tomatoes', lb: 'Letterboxd', az: 'A–Z' };
 const AFTER = [[0, 'Any time'], [12, '12 PM'], [15, '3 PM'], [17, '5 PM'], [19, '7 PM'], [21, '9 PM']];
 const state = {
   view: store.get('view', 'movies'),
-  sort: store.get('sort2', 'popular'),
+  sort: store.get('sort2', 'smart'),
+  grp: store.get('grp', false),     // "Group by release": Just released / Now playing / Re-releases
   after: store.get('after', 0),
   date: null, q: '', movie: null,
   size: store.get('size', 'all'),   // 'all', 'major' or 'minor' theaters (see theaterKind)
@@ -425,17 +428,61 @@ function visibleGroups() {
 const groupBy = (arr, k) => arr.reduce((o, x) => ((o[x[k]] ??= []).push(x), o), {});
 const byDist = (a, b) => theaterById[a].dist - theaterById[b].dist;
 
+/* Weeks a film has been out: cinemaclock's "3rd week" label, else from its Rotten Tomatoes release
+   date. null when unknown (events, films only Google listed). */
+function weeksOut(m) {
+  const w = /^(\d+)(?:st|nd|rd|th) week/.exec(m.week || '');
+  if (w) return +w[1];
+  const r = m.rt && m.rt.released;
+  if (!r) return null;
+  const days = (new Date(today) - new Date(r)) / 864e5;
+  return days >= 0 && days < 365 ? Math.floor(days / 7) + 1 : null;
+}
+/* Release group for "Group by release": out a week or less, other new releases, and the rest. */
+function releaseGroup(m) {
+  if ((m.kind || 'new') !== 'new') return 'older';
+  return weeksOut(m) === 1 ? 'just' : 'now';
+}
+
+/* Smart sort: 0.5 quality + 0.3 showings + 0.2 newness, each scored 0 to 1.
+   quality  - Letterboxd (out of 5, x20) 70% and Rotten Tomatoes % 30%; one score alone is pulled a
+              third of the way toward 60, and no score at all counts as 55, so an unrated film is
+              neither buried nor boosted.
+   showings - showings left at the theaters shown, log-scaled against the most any film has here
+              (300 against 30 is not ten times better).
+   newness  - 1 in a film's first week, halving every 3 weeks; unknown 0.5; re-releases and events 0.3. */
+const SMART = { quality: 0.5, showings: 0.3, newness: 0.2, lb: 0.7, rt: 0.3 };   // lb + rt = 1, within quality
+function smartScores(counts) {
+  const M = DATA.movies, top = Math.max(1, ...Object.values(counts));
+  const out = {};
+  for (const [mid, n] of Object.entries(counts)) {
+    const m = M[mid];
+    const rt = m.rt && m.rt.score != null ? m.rt.score : null;
+    const lb = m.lb && m.lb.score != null ? m.lb.score * 20 : null;
+    const one = rt ?? lb;
+    const quality = (rt != null && lb != null ? SMART.lb * lb + SMART.rt * rt
+      : one != null ? (2 * one + 60) / 3 : 55) / 100;
+    const showings = Math.log1p(n) / Math.log1p(top);
+    const w = weeksOut(m);
+    const newness = (m.kind || 'new') !== 'new' ? 0.3 : w == null ? 0.5 : Math.pow(0.5, (w - 1) / 3);
+    out[mid] = SMART.quality * quality + SMART.showings * showings + SMART.newness * newness;
+  }
+  return out;
+}
+
 function sortMovies(byMovie) {
-  // "Most showtimes" counts every showing that day at every theater in the area, regardless of
-  // the theater pick, time filter or what has already started — a stable "what's biggest" order.
-  const areaCount = {};
-  DATA.groups.forEach(g => { if (g.days[state.date]) areaCount[g.mid] = (areaCount[g.mid] || 0) + g.days[state.date].length; });
+  // Counts are what each tile shows: showings still to come at the theaters shown (picked theaters,
+  // the map view and the All/Major/Smaller filter), after "Starts after".
+  const left = {};
+  for (const [mid, gs] of Object.entries(byMovie)) left[mid] = gs.reduce((k, g) => k + upcoming(g).length, 0);
   const first = {};
   for (const [mid, gs] of Object.entries(byMovie)) first[mid] = Math.min(...gs.flatMap(upcoming).map(([t]) => t));
   const M = DATA.movies, title = (a, b) => M[a].title.localeCompare(M[b].title);
   const score = (m, k) => m[k] && m[k].score != null ? m[k].score : -1;
+  const smart = state.sort === 'smart' ? smartScores(left) : {};
   const cmp = {
-    popular: (a, b) => (areaCount[b] || 0) - (areaCount[a] || 0) || title(a, b),
+    smart: (a, b) => smart[b] - smart[a] || title(a, b),
+    popular: (a, b) => left[b] - left[a] || title(a, b),
     soonest: (a, b) => first[a] - first[b] || title(a, b),
     rt: (a, b) => score(M[b], 'rt') - score(M[a], 'rt') || title(a, b),
     lb: (a, b) => score(M[b], 'lb') - score(M[a], 'lb') || title(a, b),
@@ -448,7 +495,8 @@ function sortMovies(byMovie) {
 function toolbar() {
   const opt = (v, l, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${l}</option>`;
   return `<div class="toolbar">
-    ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>` : ''}
+    ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>
+      <label class="chkbox"><input type="checkbox" id="grp"${state.grp ? ' checked' : ''}> Group by release</label>` : ''}
     <label>Starts after <select id="after">${AFTER.map(([v, l]) => opt(v, l, state.after)).join('')}</select></label></div>`;
 }
 function emptyMsg() {
@@ -468,12 +516,14 @@ function renderGrid() {
     return `<button class="tile" data-mid="${mid}">${art(m)}<h3>${esc(m.title)}</h3>
       <div class="meta">${metaLine(m)}</div>${ratings(m, false)}<div class="next">${label}</div></button>`;
   };
-  // Two sections: new releases (this year or last), then re-releases and special events.
-  const fresh = mids.filter(mid => (DATA.movies[mid].kind || 'new') === 'new');
-  const older = mids.filter(mid => (DATA.movies[mid].kind || 'new') !== 'new');
   const section = (title, list) => list.length
     ? `<section class="msec"><h2 class="sech">${title}<span>${list.length}</span></h2><div class="grid">${list.map(tile).join('')}</div></section>` : '';
-  return gapNote() + (mids.length ? section('New releases', fresh) + section('Re-releases &amp; special events', older) : emptyMsg());
+  if (!mids.length) return gapNote() + emptyMsg();
+  // "Group by release" on: three sections, each in the chosen sort order. Off: one list.
+  if (!state.grp) return gapNote() + section('Movies', mids);
+  const of = g => mids.filter(mid => releaseGroup(DATA.movies[mid]) === g);
+  return gapNote() + section('Just released', of('just')) + section('Now playing', of('now'))
+    + section('Re-releases &amp; special events', of('older'));
 }
 function renderDetail(mid) {
   const m = DATA.movies[mid];
@@ -817,6 +867,7 @@ $('main').addEventListener('click', e => {
 $('toolbar').addEventListener('change', e => {
   if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort2', state.sort); }
   if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
+  if (e.target.id === 'grp') { state.grp = e.target.checked; store.set('grp', state.grp); }
   render();
 });
 $('theaters').addEventListener('click', e => {
