@@ -164,7 +164,7 @@ h1 { display: flex; align-items: center; gap: 6px; font-size: 21px; margin: 0; l
   .bar .toolbar::-webkit-scrollbar { display: none; }
   .toolbar .chipb { flex: none; }
   .toolbar .upd { display: none; }
-  /* Scrolling down tucks the title row away under the top edge, leaving the dates; up brings it back. */
+  /* Scrolling down tucks the whole top bar (dates too) off the top edge; scrolling up brings it back. */
   header.top { transition: transform .2s ease; }
   header.top.tuck { transform: translateY(calc(-1 * var(--tuck, 95px))); }
 }
@@ -377,7 +377,7 @@ const SORTS = { smart: 'Smart sort', popular: 'Most showtimes', soonest: 'Starti
 const AFTER = [[0, 'Any time'], [12, '12 PM'], [15, '3 PM'], [17, '5 PM'], [19, '7 PM'], [21, '9 PM']];
 const state = {
   view: store.get('view', 'movies'),
-  sort: store.get('sort2', 'smart'),
+  sort: 'smart',      // every visit opens on Smart sort; a different pick lasts until the page is left
   grp: store.get('grp', false),     // "Group by release type": Just released / Now playing / Re-releases
   after: store.get('after', 0),
   date: null, q: '', movie: null,
@@ -592,7 +592,7 @@ function sortMovies(byMovie) {
 /* The toolbar's two menus. Each pill shows its label and current choice; tapping opens #menu. */
 const MENUS = {
   sort: { label: 'Sort by', opts: () => Object.entries(SORTS), cur: () => state.sort,
-    set: v => { state.sort = v; store.set('sort2', v); } },
+    set: v => { state.sort = v; } },
   after: { label: 'Starts after', opts: () => AFTER.map(([v, l]) => [String(v), l]), cur: () => String(state.after),
     set: v => { state.after = Number(v); store.set('after', state.after); } }
 };
@@ -1078,20 +1078,35 @@ function applyWhere() {
   $('wherebar').setAttribute('aria-expanded', state.whereOpen);
 }
 $('wherebar').addEventListener('click', () => { state.whereOpen = !state.whereOpen; store.set('where', state.whereOpen); applyWhere(); });
-/* Phones: scrolling down tucks the title row (city, search, Movies/Theaters) up under the top edge so
-   the dates stay and the movies get the room; any scroll up brings it back. Not while the city list
+/* Phones: scrolling down tucks the whole top bar (city, search, Movies/Theaters and the dates) up
+   off the screen so the movies get it all; any scroll up brings it back. Not while the city list
    is open or the movie search box is in use. */
-let lastY = 0;
-const PHONE = '(max-width: 520px)';
+// Slow scrolls wobble (a drifting finger, Android's address bar sliding in and out), so the bar only
+// moves after a steady run: TUCK_AFTER px down to hide it, SHOW_AFTER px up to bring it back. anchorY
+// is the furthest point reached in the current direction. The stretch past the bottom is ignored.
+const PHONE = '(max-width: 520px)', TUCK_AFTER = 30, SHOW_AFTER = 50;
+let anchorY = 0, tucked = false;
+function setTuck(on) {
+  const h = document.querySelector('header.top');
+  if (on) h.style.setProperty('--tuck', h.offsetHeight + 'px');
+  h.classList.toggle('tuck', on); tucked = on;
+}
 window.addEventListener('scroll', () => {
-  const y = window.scrollY, h = document.querySelector('header.top');
-  const keep = !matchMedia(PHONE).matches || !$('cpop').hidden || document.activeElement === $('q') || y < 120;
-  if (keep) h.classList.remove('tuck');
-  else if (y > lastY + 4) { h.style.setProperty('--tuck', document.querySelector('.titlerow').offsetHeight + 'px'); h.classList.add('tuck'); }
-  else if (y < lastY - 4) h.classList.remove('tuck');
-  if (keep || Math.abs(y - lastY) > 4) lastY = y;
+  const y = window.scrollY, el = document.documentElement;
+  if (!matchMedia(PHONE).matches || !$('cpop').hidden || document.activeElement === $('q') || y < 120) {
+    if (tucked) setTuck(false);
+    anchorY = y; return;
+  }
+  if (y + window.innerHeight >= el.scrollHeight - 2) return;   // at (or bouncing off) the bottom
+  if (!tucked) {
+    if (y < anchorY) anchorY = y;
+    else if (y - anchorY > TUCK_AFTER) { setTuck(true); anchorY = y; }
+  } else {
+    if (y > anchorY) anchorY = y;
+    else if (anchorY - y > SHOW_AFTER) { setTuck(false); anchorY = y; }
+  }
 }, { passive: true });
-$('q').addEventListener('focus', () => document.querySelector('header.top').classList.remove('tuck'));
+$('q').addEventListener('focus', () => { if (tucked) setTuck(false); });
 // Swiping the sort line sideways would leave an open menu behind; close it.
 $('toolbar').addEventListener('scroll', () => closeMenu(), true);
 function toggleFold(tid) {
