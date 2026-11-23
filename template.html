@@ -184,8 +184,12 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
 .btn { flex: none; font-size: 13px; padding: 5px 10px; border: 1px solid var(--chip-line); border-radius: 8px; text-decoration: none; background: var(--chip); }
 .btn:hover { border-color: var(--accent); }
 .tbtns { display: flex; gap: 6px; flex: none; }
-.toolbar .seg { margin-left: 0; }
-.seg.sm button { height: 27px; font-size: 13px; padding: 0 10px; }
+/* Top of the theater panel: the All row and the All/Major/Smaller filter side by side. */
+.ttop { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.ttop .trow.all { flex: 1 1 260px; min-width: 0; }
+.ttop .seg { margin-left: 0; }
+.seg.sm button { height: 26px; font-size: 12.5px; padding: 0 10px; white-space: nowrap; }
+@media (max-width: 520px) { .ttop .seg { flex: 1 1 100%; } .ttop .seg button { flex: 1; padding: 0 6px; } }
 .tcol { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 /* Section labels in the theater list (Major chains / Smaller theaters) and the Theaters view. */
 .tgroup { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
@@ -197,6 +201,18 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
 .chk:hover { text-decoration: underline; }
 .tmovie { border-top: 1px solid var(--line); padding: 10px 14px; display: flex; gap: 12px; }
 .tmovie .art { flex: none; width: 44px; aspect-ratio: 2 / 3; border-radius: 5px; background: var(--line) center/cover no-repeat; cursor: pointer; }
+/* Title card in place of a missing poster (art()). */
+/* Fixed padding: a percentage would be of the parent's width and squeeze the title to nothing. */
+.art.ph { display: flex; flex-direction: column; justify-content: center; padding: 12px; text-align: center;
+  overflow: hidden; color: #fff;
+  background-image: linear-gradient(160deg, hsl(var(--h) 45% 34%), hsl(calc(var(--h) + 40) 50% 18%)); }
+.art.ph span { max-height: 100%; overflow: hidden; font-weight: 700; line-height: 1.15; letter-spacing: -.01em;
+  overflow-wrap: anywhere; font-size: 17px; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.hero .art.ph { padding: 8px; }
+.hero .art.ph span { font-size: 13px; }
+.tmovie .art.ph { padding: 3px; }
+.tmovie .art.ph span { font-size: 6.5px; }
+@media (max-width: 520px) { .tile .art.ph span { font-size: 12px; } }
 .tmovie .body { min-width: 0; flex: 1; }
 .tmovie .ttl { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin-bottom: 3px; }
 .tmovie h3 { font-size: 15px; margin: 0; }
@@ -300,8 +316,12 @@ function dateLabel(d) {
   const top = d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : DOW[new Date(y, m - 1, day).getDay()];
   return { top, sub: MON[m - 1] + ' ' + day };
 }
+/* A film's poster, or for a film with none anywhere (mostly one-off events) a title card: the title
+   on a color picked from the title, so the same film always gets the same card. */
 function art(m, cls) {
-  return `<div class="art ${cls || ''}"${m.poster ? ` style="background-image:url('${esc(m.poster)}')"` : ''} role="img" aria-label="${esc(m.title)} poster"></div>`;
+  if (m.poster) return `<div class="art ${cls || ''}" style="background-image:url('${esc(m.poster)}')" role="img" aria-label="${esc(m.title)} poster"></div>`;
+  const hue = [...m.title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+  return `<div class="art ph ${cls || ''}" style="--h:${hue}" role="img" aria-label="${esc(m.title)}"><span>${esc(m.title)}</span></div>`;
 }
 function metaLine(m, full) {
   const bits = [m.runtime, full ? m.genre : null, m.year].filter(Boolean).map(esc).join(' · ');
@@ -427,10 +447,7 @@ function sortMovies(byMovie) {
 /* ---------- views ---------- */
 function toolbar() {
   const opt = (v, l, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${l}</option>`;
-  const sizes = [['all', 'All'], ['major', 'Major'], ['minor', 'Smaller']];
   return `<div class="toolbar">
-    <div class="seg sm" role="group" aria-label="Theater size">${sizes.map(([v, l]) =>
-      `<button data-size="${v}" aria-pressed="${state.size === v}" title="${v === 'all' ? 'All theaters' : KIND[v]}">${l}</button>`).join('')}</div>
     ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>` : ''}
     <label>Starts after <select id="after">${AFTER.map(([v, l]) => opt(v, l, state.after)).join('')}</select></label></div>`;
 }
@@ -562,7 +579,11 @@ function renderTheaterList(revealId) {
       }).join('')
     : ts.map(rowOf).join('');
   const none = !pool ? `No${kindWord} theaters in this area.` : 'No theaters in this part of the map.';
-  list.innerHTML = row('', 'all', allName, allMeta, total, picks.size ? 'Show every theater' : DATA.city, !picks.size) +
+  // The All/Major/Smaller theater filter sits beside the All row (wrapping under it on phones).
+  const sizes = [['all', 'All theaters'], ['major', 'Major chains'], ['minor', 'Smaller theaters']];
+  const sizeSeg = `<div class="seg sm" role="group" aria-label="Which theaters">${sizes.map(([v, l]) =>
+    `<button type="button" data-size="${v}" aria-pressed="${state.size === v}">${l}</button>`).join('')}</div>`;
+  list.innerHTML = `<div class="ttop">${row('', 'all', allName, allMeta, total, picks.size ? 'Show every theater' : DATA.city, !picks.size)}${sizeSeg}</div>` +
     html + (ts.length ? '' : `<div class="tnone">${none}</div>`);
   list.scrollTop = top;
   const on = revealId && list.querySelector(`.trow[data-tid="${revealId}"]`);
@@ -798,7 +819,7 @@ $('toolbar').addEventListener('change', e => {
   if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
   render();
 });
-$('toolbar').addEventListener('click', e => {
+$('theaters').addEventListener('click', e => {
   const b = e.target.closest('[data-size]'); if (!b) return;
   state.size = b.dataset.size; store.set('size', state.size);
   render();

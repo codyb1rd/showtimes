@@ -235,8 +235,37 @@ def rt_lookup(title, year):
         canon = re.search(r'<link rel="canonical" href="([^"]+)"', page)
         tix = re.search(r'"showtimesUrl":"(https://www\.fandango\.com/[^"?]+)', page)
         return {"score": int(s.group(1)) if s else None, "url": canon.group(1) if canon else url,
-                "tix": tix.group(1) if tix else ""}
+                "tix": tix.group(1) if tix else "", "img": poster_in("rt", page)}
     return None
+
+
+def poster_in(site, page):
+    """A film page's portrait poster: RT's og:image (RT's own placeholder ignored); Letterboxd's
+    schema.org image (its og:image is a wide backdrop, not a poster)."""
+    if site == "rt":
+        m = re.search(r'<meta property="og:image" content="([^"]+)"', page)
+        return m.group(1) if m and "poster_default" not in m.group(1) else ""
+    m = re.search(r'"image":"(https://a\.ltrbxd\.com/resized/film-poster/[^"]+)"', page)
+    return m.group(1) if m else ""
+
+
+def fallback_poster(m):
+    """A poster for a film cinemaclock has none for: from its RT or Letterboxd match, reading the
+    page again only for a match cached before matches kept the poster address."""
+    for site in ("rt", "lb"):
+        v = m.get(site) or {}
+        if v.get("img"):
+            return v["img"]
+    for site in ("rt", "lb"):
+        v = m.get(site) or {}
+        if v.get("url") and "img" not in v:
+            try:
+                v["img"] = poster_in(site, fetch(v["url"]))
+            except Exception:
+                continue
+            if v["img"]:
+                return v["img"]
+    return ""
 
 
 def lb_lookup(title, year):
@@ -252,7 +281,7 @@ def lb_lookup(title, year):
         if not (y and year_ok(y.group(1), year)):
             continue
         r = re.search(r'twitter:data2" content="([\d.]+) out of 5', page)
-        return {"score": float(r.group(1)) if r else None, "url": url}
+        return {"score": float(r.group(1)) if r else None, "url": url, "img": poster_in("lb", page)}
     return None
 
 
@@ -297,6 +326,16 @@ def add_ratings(movies, ex):
 
 
 POSTERS = CACHE.parent / "posters"
+
+
+def poster_for(mid, m):
+    """A film's poster: one already saved; else cinemaclock's; else its RT or Letterboxd poster.
+    An event with no match anywhere gets none, and the page draws a title card instead."""
+    f = POSTERS / f"{mid}.jpg"
+    if f.exists():
+        return f.read_bytes()
+    url = m["poster"] or fallback_poster(m)
+    return poster_bytes(mid, url) if url else b""
 
 
 def poster_bytes(mid, url):
@@ -363,11 +402,19 @@ def build_cities(slugs, radius, cap, no_ratings=False, workers=4, log=print):
 
         if not no_ratings:
             add_ratings(movies, ex)
-        posters = {mid: ex.submit(poster_bytes, mid, m["poster"]) for mid, m in movies.items() if m["poster"]}
+        # Top up a few cities with Google's showtimes where cinemaclock falls short (gfill.py). Before
+        # posters, so a film only Google listed gets scores and a poster like any other.
+        gfill.apply(cities, parsed, movies, CACHE.parent / "gfill.json", log=log)
+        if not no_ratings:
+            google_only = {mid: {**m, "slug": f"{slugify(m['title'], '-')}-{dt.date.today().year}"}
+                           for mid, m in movies.items() if mid.startswith("g")}
+            add_ratings(google_only, ex)
+            for mid, m in google_only.items():
+                movies[mid].update({k: m[k] for k in ("rt", "lb") if k in m})
+        posters = {mid: ex.submit(poster_for, mid, m) for mid, m in movies.items()}
         images = {mid: f.result() for mid, f in posters.items()}
+        log(f"posters: {sum(1 for v in images.values() if v)}/{len(movies)} films")
 
-    # Top up a few cities with Google's showtimes where cinemaclock is known to fall short (gfill.py).
-    gfill.apply(cities, parsed, movies, CACHE.parent / "gfill.json", log=log)
     for m in movies.values():
         if m["slug"]:                 # a film only Google listed has no cinemaclock page; gfill set its url
             m["url"] = f"{BASE}/movies/{m['slug']}"
