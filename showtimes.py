@@ -234,8 +234,10 @@ def rt_lookup(title, year):
         s = re.search(r'"criticsScore":\{[^}]*?"scorePercent":"(\d+)%"', page)
         canon = re.search(r'<link rel="canonical" href="([^"]+)"', page)
         tix = re.search(r'"showtimesUrl":"(https://www\.fandango\.com/[^"?]+)', page)
+        released = re.search(r'"dateCreated":"(\d{4}-\d\d-\d\d)', page)   # the page uses it for "weeks out"
         return {"score": int(s.group(1)) if s else None, "url": canon.group(1) if canon else url,
-                "tix": tix.group(1) if tix else "", "img": poster_in("rt", page)}
+                "tix": tix.group(1) if tix else "", "img": poster_in("rt", page),
+                "released": released.group(1) if released else ""}
     return None
 
 
