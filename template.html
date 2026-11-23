@@ -37,19 +37,47 @@ button { font: inherit; color: inherit; }
 
 header.top { position: sticky; top: 0; z-index: 1000; background: var(--bar); backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.titlerow { display: flex; align-items: center; gap: 10px; padding-top: 12px; }
-h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-h1 span { color: var(--accent); }
-.seg { display: inline-flex; border: 1px solid var(--chip-line); border-radius: 17px; overflow: hidden; flex: none; margin-left: auto; }
+/* Desktop: title, movie search and the Movies/Theaters switch share one row. Phones: the title
+   gets its own row (so the city name isn't cut short) and search + switch sit under it. */
+.titlerow { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 9px 10px; padding: 12px 0 9px; }
+h1 { display: flex; align-items: center; gap: 6px; font-size: 21px; margin: 0; letter-spacing: -.01em; min-width: 0; white-space: nowrap; }
+/* The city name in the title is the city chooser. */
+.cityb { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font: inherit; color: var(--accent);
+  background: none; border: 0; border-radius: 8px; padding: 1px 4px; margin: 0 -4px; cursor: pointer; }
+.cityb #city { overflow: hidden; text-overflow: ellipsis; }
+.cityb svg { flex: none; width: 15px; height: 15px; transition: transform .12s ease; }
+.cityb:hover, .cityb[aria-expanded="true"] { background: var(--accent-soft); }
+.cityb[aria-expanded="true"] svg { transform: rotate(180deg); }
+.cityb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cityb:disabled { cursor: default; background: none; }
+.cityb:disabled svg { display: none; }
+.cpop { position: absolute; top: calc(100% - 4px); z-index: 1100; width: 300px; padding: 8px; }
+.cpop, .menu { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.cpop .field { width: 100%; }
+.clist { max-height: min(60vh, 400px); overflow-y: auto; overscroll-behavior: contain; margin-top: 6px; }
+.copt { display: flex; justify-content: space-between; align-items: center; width: 100%; border: 0; background: none;
+  text-align: left; padding: 7px 10px; border-radius: 7px; font-size: 14.5px; cursor: pointer; }
+.copt.act, .copt:hover, .copt:focus-visible { background: var(--chip); }
+.copt:focus { outline: none; }
+.copt:focus-visible { box-shadow: inset 0 0 0 1.5px var(--chip-line); }
+.copt[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.copt[aria-selected="true"]::after { content: "✓"; }
+.cnone { color: var(--muted); font-size: 13.5px; padding: 8px 10px; }
+.seg { display: inline-flex; border: 1px solid var(--chip-line); border-radius: 17px; overflow: hidden; flex: none; }
 .seg button { border: 0; background: var(--chip); font-size: 14px; padding: 0 13px; height: 32px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-.controls { display: flex; gap: 8px; align-items: center; margin: 9px 0 7px; }
-.controls form { flex: 1; min-width: 0; display: flex; }
 .field { flex: 1; min-width: 0; height: 34px; border-radius: 17px; border: 1px solid var(--chip-line);
   background: var(--chip); color: var(--ink); padding: 0 14px; font: inherit; }
 .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-#loc { padding-left: 32px; background: var(--chip) no-repeat 11px 50% / 14px 14px
-  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z'/%3E%3C/svg%3E"); }
+#q { flex: 0 1 340px; margin-left: auto; }
+@media (max-width: 620px) {
+  h1 { flex: 1 1 100%; }
+  #q { flex: 1 1 0; margin-left: 0; }
+  .cpop { left: 0 !important; right: 0; width: auto; }
+}
+/* 16px text in the boxes stops iPhones zooming the page when one is tapped. */
+@media (max-width: 520px) { .field { font-size: 16px; } }
 .scroller { display: flex; gap: 6px; overflow-x: auto; padding: 1px 0 8px; scrollbar-width: none; }
 .scroller::-webkit-scrollbar { display: none; }
 .pill { flex: none; border: 1px solid var(--chip-line); background: var(--chip); border-radius: 10px;
@@ -83,14 +111,13 @@ h1 span { color: var(--accent); }
 .trow .ct b { color: var(--ink); font-weight: 600; }
 .trow .ct.gap { color: var(--accent); text-decoration: none; }
 .trow .ct.gap:hover { text-decoration: underline; }
-.gapnote { margin: 0 0 16px; }
 .trow.zero { opacity: .45; }
 .trow.all { grid-column: 1 / -1; font-weight: 600; grid-template-columns: 8px minmax(0, 1fr) auto auto; }
 .trow.all .pin { background: none; box-shadow: inset 0 0 0 2px var(--pin); }
 .trow.all[aria-pressed="true"] .pin { box-shadow: inset 0 0 0 2px var(--accent); }
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap; margin: 0 0 18px; }
+.bar { margin: 0 0 18px; }
 .bar .toolbar { margin: 0; }
-.bar .sub { margin: 0; }
+.toolbar .upd { margin-left: auto; font-size: 12.5px; white-space: nowrap; }
 .leaflet-control-attribution { font-size: 8px !important; line-height: 1.3; padding: 0 3px !important; }
 /* OpenStreetMap tiles are light only; darken them to sit in the dark theme. */
 @media (prefers-color-scheme: dark) {
@@ -111,19 +138,59 @@ h1 span { color: var(--accent); }
   .trow { gap: 7px; padding: 5px 6px; font-size: 13px; }
   .trow .nm { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+/* Phones fold the map and theater list into one line (#wherebar) so the movies start near the top.
+   Folded, the panel is moved off screen rather than hidden: the map keeps its real size, so the
+   "in view" filter works exactly as when it's open (a hidden map would have no theaters in view). */
+.wherebar { display: none; }
+@media (max-width: 520px) {
+  .wherebar { display: flex; align-items: center; gap: 8px; width: 100%; margin: 8px 0 6px; padding: 0 11px;
+    height: 36px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
+    font-size: 13.5px; text-align: left; cursor: pointer; }
+  .wherebar .wpin { flex: none; width: 15px; height: 15px; color: var(--accent); }
+  .wherebar .wsum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wherebar .wsum b { font-weight: 600; }
+  .wherebar .wupd { flex: none; color: var(--muted); font-size: 11.5px; }
+  .wherebar > svg:last-child { flex: none; width: 15px; height: 15px; color: var(--muted); transition: transform .12s ease; }
+  .wherebar[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+  .area.folded { position: absolute; left: -10000px; top: 0; width: calc(100vw - 24px); visibility: hidden; }
+  .area { margin-top: 0; }
+  /* One swipeable line of Sort by / Starts after / Group; "Updated" moves into the theaters line. */
+  .bar { margin: 0 -12px 8px; }
+  .bar .toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 12px; }
+  /* Tighter phone spacing: 12px side margins and smaller gaps between the rows above the movies. */
+  .wrap { padding: 0 12px; }
+  .titlerow { padding: 10px 0 8px; gap: 8px 10px; }
+  .scroller { padding-bottom: 7px; }
+  .bar .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar .chipb { flex: none; }
+  .toolbar .upd { display: none; }
+  /* Scrolling down tucks the title row away under the top edge, leaving the dates; up brings it back. */
+  header.top { transition: transform .2s ease; }
+  header.top.tuck { transform: translateY(calc(-1 * var(--tuck, 95px))); }
+}
 .msec + .msec { margin-top: 30px; }
 .sech { font-size: 17px; margin: 0 0 12px; letter-spacing: -.01em; }
 .sech span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 4px; }
 .rt svg { width: 14px; height: 14px; flex: none; }
 
 main { padding: 0 0 60px; }
-.toolbar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; }
-.toolbar .count { margin-right: auto; }
-.toolbar label { display: inline-flex; align-items: center; gap: 6px; }
-.toolbar .chkbox { cursor: pointer; }
-.toolbar .chkbox input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
-select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--chip); border: 1px solid var(--chip-line);
-  border-radius: 8px; padding: 4px 8px; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; }
+/* Sort by / Starts after / Group by release type: pills as wide as their text, not as wide as the longest
+   choice (which is what a plain <select> does). Sort and Starts after open a menu (#menu). */
+.chipb { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 9px 0 11px; border-radius: 14px;
+  border: 1px solid var(--chip-line); background: var(--chip); color: var(--ink); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.chipb .cl { color: var(--muted); }
+.chipb b { font-weight: 600; }
+.chipb svg { width: 12px; height: 12px; color: var(--muted); transition: transform .12s ease; }
+.chipb[aria-expanded="true"] svg { transform: rotate(180deg); }
+.chipb:hover, .chipb[aria-expanded="true"] { border-color: var(--accent); }
+.chipb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chipb.tog { padding: 0 11px 0 8px; }
+.chipb.tog::before { content: ""; width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--chip-line);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 700; line-height: 1; }
+.chipb.tog[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.chipb.tog[aria-pressed="true"]::before { content: "✓"; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.menu { position: absolute; z-index: 1100; min-width: 190px; padding: 6px; }
 
 .ratings { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; }
 .ratings a, .ratings span { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -147,7 +214,18 @@ select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--
 .tile .ratings { margin-top: 3px; }
 .tile .next { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .tile .next b { color: var(--accent); font-weight: 600; }
-@media (max-width: 520px) { .grid { grid-template-columns: repeat(3, 1fr); gap: 14px 10px; } .tile h3 { font-size: 13px; } }
+/* Phones: three across, posters a little shorter (a light crop at the sides) and the text under them tighter. */
+@media (max-width: 520px) {
+  .grid { grid-template-columns: repeat(3, 1fr); gap: 12px 8px; }
+  .sech { font-size: 16px; margin-bottom: 8px; }
+  .msec + .msec { margin-top: 22px; }
+  .tile .art { aspect-ratio: 5 / 7; border-radius: 8px; }
+  .tile h3 { font-size: 13px; line-height: 1.15; margin: 5px 0 1px; }
+  .tile .meta { font-size: 11px; }
+  .tile .meta .rating { font-size: 10px; padding: 0 3px; }
+  .tile .ratings { margin-top: 1px; font-size: 11.5px; gap: 8px; }
+  .tile .next { font-size: 11.5px; margin-top: 1px; }
+}
 
 .meta { color: var(--muted); font-size: 13px; }
 .rating { display: inline-block; border: 1px solid var(--chip-line); border-radius: 4px; padding: 0 4px;
@@ -180,9 +258,20 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
 .time.notix { color: var(--ink); font-weight: 500; cursor: default; }
 @media (max-width: 560px) { .frow { grid-template-columns: 1fr; gap: 3px; padding: 4px 0; } }
 
-.thead { padding: 12px 14px; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+/* The buttons sit beside the name, or drop under it (lined up with the name) when the card is narrow. */
+.thead { padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; align-items: flex-start; cursor: pointer; }
+.thead .tname { flex: 1 1 280px; }
+@media (max-width: 520px) { .thead .tbtns { margin-left: 26px; } }
+.thead:hover h2 { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.thead:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 14px; }
 .thead h2 { font-size: 17px; margin: 0 0 2px; }
-.thead h2 a { text-decoration: none; }
+.tname { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.tname > svg { flex: none; width: 18px; height: 18px; margin-top: 2px; color: var(--muted); transition: transform .12s ease; }
+.folded .tname > svg { transform: rotate(-90deg); }
+.tsum { margin-top: 2px; }
+.tgroup.inside { border-top: 1px solid var(--line); padding: 8px 14px 6px; }
+.mline { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px; margin-bottom: 5px; }
+.mline .meta { font-size: 12.5px; }
 .btn { flex: none; font-size: 13px; padding: 5px 10px; border: 1px solid var(--chip-line); border-radius: 8px; text-decoration: none; background: var(--chip); }
 .btn:hover { border-color: var(--accent); }
 .tbtns { display: flex; gap: 6px; flex: none; }
@@ -216,42 +305,49 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
 .tmovie .art.ph span { font-size: 6.5px; }
 @media (max-width: 520px) { .tile .art.ph span { font-size: 12px; } }
 .tmovie .body { min-width: 0; flex: 1; }
-.tmovie .ttl { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin-bottom: 3px; }
-.tmovie h3 { font-size: 15px; margin: 0; }
+.tmovie h3 { font-size: 15px; margin: 0 0 3px; }
 .tmovie h3 a { text-decoration: none; cursor: pointer; }
 .tmovie h3 a:hover { text-decoration: underline; }
 .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
 .none { color: var(--muted); font-size: 14px; padding: 0 14px 14px; }
-footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16px 30px; }
+/* A missing score ("RT —") is also .none: keep the message's padding and size off it. */
+.ratings .none { padding: 0; font-size: inherit; }
 </style>
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <div class="titlerow"><h1>Showtimes <span id="city"></span></h1>
+    <div class="titlerow"><h1>Showtimes <button class="cityb" id="cityb" type="button" aria-haspopup="listbox" aria-expanded="false"
+        aria-controls="cpop" title="Change city"><span id="city"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></h1>
+      <input class="field" id="q" type="search" placeholder="Search movies" autocomplete="off">
       <div class="seg" role="group" aria-label="View">
         <button id="vMovies" aria-pressed="true">Movies</button><button id="vTheaters" aria-pressed="false">Theaters</button>
       </div>
+      <div class="cpop" id="cpop" hidden>
+        <input class="field" id="cq" type="search" placeholder="Type a city" autocomplete="off" enterkeyhint="go"
+          aria-label="Filter cities" aria-controls="clist">
+        <div class="clist" id="clist" role="listbox" aria-label="Cities"></div>
+      </div>
     </div>
-    <div class="controls">
-      <form id="locform" autocomplete="off"><input class="field" id="loc" list="citylist" type="search" placeholder="City" enterkeyhint="go"></form>
-      <input class="field" id="q" type="search" placeholder="Search movies" autocomplete="off">
-    </div>
-    <datalist id="citylist"></datalist>
     <div class="scroller" id="dates" role="group" aria-label="Date"></div>
   </div>
 </header>
 <div class="wrap">
   <div id="notes"></div>
-  <div class="area">
+  <button type="button" class="wherebar" id="wherebar" aria-controls="area" aria-expanded="false">
+    <svg class="wpin" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+    <span class="wsum" id="wsum"></span><span class="wupd" id="wupd"></span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+  <div class="area" id="area">
     <div id="mapwrap" hidden><div id="map"></div></div>
     <div class="tlist" id="theaters" role="group" aria-label="Theaters"></div>
   </div>
-  <div class="bar"><div id="toolbar"></div><div class="sub" id="updated"></div></div>
+  <div class="bar" id="toolbar"></div>
+  <div class="menu" id="menu" role="listbox" hidden></div>
   <main id="main"></main>
 </div>
-<footer>Listings come from cinemaclock.com and can miss new bookings; check the theater's own site to be sure.<br>
-Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd · map © OpenStreetMap contributors.</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -282,11 +378,13 @@ const AFTER = [[0, 'Any time'], [12, '12 PM'], [15, '3 PM'], [17, '5 PM'], [19, 
 const state = {
   view: store.get('view', 'movies'),
   sort: store.get('sort2', 'smart'),
-  grp: store.get('grp', false),     // "Group by release": Just released / Now playing / Re-releases
+  grp: store.get('grp', false),     // "Group by release type": Just released / Now playing / Re-releases
   after: store.get('after', 0),
   date: null, q: '', movie: null,
   size: store.get('size', 'all'),   // 'all', 'major' or 'minor' theaters (see theaterKind)
   picked: new Set(),  // theater ids to show; empty means all
+  fold: new Set(store.get('fold', [])),   // theaters folded to their header in the Theaters view (remembered)
+  whereOpen: store.get('where', false),   // phones: map + theater list open (true) or folded into one line
   inView: null,       // theater ids inside the map view; null when every theater is in view
   origin: null        // {lat, lon, label}: the city's center (its nearest theater), for the start view
 };
@@ -326,8 +424,14 @@ function art(m, cls) {
   const hue = [...m.title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
   return `<div class="art ph ${cls || ''}" style="--h:${hue}" role="img" aria-label="${esc(m.title)}"><span>${esc(m.title)}</span></div>`;
 }
+// Film length in minutes everywhere: cinemaclock writes "2h38m", "2h" or "99m".
+function minutes(r) {
+  const x = String(r || '').match(/^(?:(\d+)h)?\s*(?:(\d+)m)?$/);
+  if (!x || !(x[1] || x[2])) return r || '';
+  return `${(+x[1] || 0) * 60 + (+x[2] || 0)} min`;
+}
 function metaLine(m, full) {
-  const bits = [m.runtime, full ? m.genre : null, m.year].filter(Boolean).map(esc).join(' · ');
+  const bits = [minutes(m.runtime), full ? m.genre : null, m.year].filter(Boolean).map(esc).join(' · ');
   return (m.rating ? `<span class="rating">${esc(m.rating)}</span>` : '') + bits;
 }
 // Small tomato (60%+) and green splat (below 60%) for the Tomatometer.
@@ -402,14 +506,6 @@ function unlisted(tid, date) {
   return date <= [...s].sort().pop();
 }
 const dayWord = d => d === today ? 'today' : d === tomorrow ? 'tomorrow' : (l => `${l.top} ${l.sub}`)(dateLabel(d));
-/* One line naming the shown theaters with no listings for the selected day, each linked out. */
-function gapNote() {
-  const gaps = DATA.theaters.filter(t => shown(t.id) && unlisted(t.id, state.date));
-  if (!gaps.length) return '';
-  const links = gaps.map(t => `<a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener">${esc(t.name)} ↗</a>`).join(', ');
-  return `<div class="note plain gapnote">Couldn't fetch showtimes for ${dayWord(state.date)} at ${links}. ` +
-    `Each link opens that theater's showtimes on Google.</div>`;
-}
 
 /* ---------- selection ---------- */
 /* The map view narrows first, then tapped theaters narrow within it. A pick that has left the
@@ -438,7 +534,8 @@ function weeksOut(m) {
   const days = (new Date(today) - new Date(r)) / 864e5;
   return days >= 0 && days < 365 ? Math.floor(days / 7) + 1 : null;
 }
-/* Release group for "Group by release": out a week or less, other new releases, and the rest. */
+const RELEASE_GROUPS = { just: 'Just released', now: 'Now playing', older: 'Re-releases &amp; special events' };
+/* Release group for "Group by release type": out a week or less, other new releases, and the rest. */
 function releaseGroup(m) {
   if ((m.kind || 'new') !== 'new') return 'older';
   return weeksOut(m) === 1 ? 'just' : 'now';
@@ -492,18 +589,55 @@ function sortMovies(byMovie) {
 }
 
 /* ---------- views ---------- */
+/* The toolbar's two menus. Each pill shows its label and current choice; tapping opens #menu. */
+const MENUS = {
+  sort: { label: 'Sort by', opts: () => Object.entries(SORTS), cur: () => state.sort,
+    set: v => { state.sort = v; store.set('sort2', v); } },
+  after: { label: 'Starts after', opts: () => AFTER.map(([v, l]) => [String(v), l]), cur: () => String(state.after),
+    set: v => { state.after = Number(v); store.set('after', state.after); } }
+};
+const CARET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 function toolbar() {
-  const opt = (v, l, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${l}</option>`;
-  return `<div class="toolbar">
-    ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>
-      <label class="chkbox"><input type="checkbox" id="grp"${state.grp ? ' checked' : ''}> Group by release</label>` : ''}
-    <label>Starts after <select id="after">${AFTER.map(([v, l]) => opt(v, l, state.after)).join('')}</select></label></div>`;
+  const pill = key => {
+    const M = MENUS[key], cur = M.opts().find(([v]) => v === M.cur());
+    return `<button type="button" class="chipb" data-menu="${key}" aria-haspopup="listbox" aria-expanded="${menuFor === key}">` +
+      `<span class="cl">${M.label}</span><b>${esc(cur ? cur[1] : '')}</b>${CARET}</button>`;
+  };
+  // The two menus come first so they share a line on phones; Group by release type and "Updated" share the next.
+  // Both views have all three: in Theaters, they order and group the movies inside each theater.
+  return pill('sort') + pill('after') +
+    `<button type="button" class="chipb tog" id="grp" aria-pressed="${state.grp}">Group by release type</button>`;
+}
+let menuFor = null;   // which menu is open: 'sort', 'after' or null
+function openMenu(btn) {
+  const key = btn.dataset.menu, M = MENUS[key], menu = $('menu');
+  closeMenu();
+  menuFor = key; btn.setAttribute('aria-expanded', 'true');
+  menu.setAttribute('aria-label', M.label);
+  menu.innerHTML = M.opts().map(([v, l]) =>
+    `<button type="button" class="copt" role="option" data-val="${esc(v)}" aria-selected="${v === M.cur()}">${esc(l)}</button>`).join('');
+  menu.hidden = false;
+  // Just under the pill, kept on screen. The menu sits in the page, so it scrolls with the pill.
+  const r = btn.getBoundingClientRect(), host = menu.offsetParent.getBoundingClientRect();
+  menu.style.minWidth = Math.max(190, r.width) + 'px';
+  const left = Math.min(r.left, document.documentElement.clientWidth - menu.offsetWidth - 8);
+  menu.style.left = (Math.max(8, left) - host.left) + 'px';
+  menu.style.top = (r.bottom + 6 - host.top) + 'px';
+  (menu.querySelector('[aria-selected="true"]') || menu.firstChild).focus();
+}
+function closeMenu(refocus) {
+  if (!menuFor) return;
+  const key = menuFor; menuFor = null;
+  $('menu').hidden = true;
+  const b = document.querySelector(`[data-menu="${key}"]`);
+  if (b) { b.setAttribute('aria-expanded', 'false'); if (refocus) b.focus(); }
 }
 function emptyMsg() {
   const zoomed = state.inView ? ' Zoom out, or tap Reset map, to see more theaters.' : '';
   return `<div class="empty">${state.q ? 'No movies match “' + esc(state.q) + '”.' : 'No upcoming showings for this day with these filters.'}${zoomed}</div>`;
 }
-function setBar(html) { $('toolbar').innerHTML = html; }
+let updatedLine = '';   // "Updated Mon 10:35am", set by setData; it ends the toolbar line
+function setBar(html) { $('toolbar').innerHTML = `<div class="toolbar">${html}<span class="upd">${updatedLine}</span></div>`; }
 function renderGrid() {
   const byMovie = groupBy(visibleGroups(), 'mid');
   const { mids } = sortMovies(byMovie);
@@ -512,18 +646,17 @@ function renderGrid() {
     const m = DATA.movies[mid];
     // Screenings still to come that day, at the theaters and times currently shown.
     const n = byMovie[mid].reduce((k, g) => k + upcoming(g).length, 0);
-    const label = `<b>${n}</b> screening${n === 1 ? '' : 's'}${state.date === today ? ' left today' : ''}`;
+    const label = `<b>${n}</b> screening${n === 1 ? '' : 's'}`;   // still to come, at the theaters shown
     return `<button class="tile" data-mid="${mid}">${art(m)}<h3>${esc(m.title)}</h3>
       <div class="meta">${metaLine(m)}</div>${ratings(m, false)}<div class="next">${label}</div></button>`;
   };
   const section = (title, list) => list.length
     ? `<section class="msec"><h2 class="sech">${title}<span>${list.length}</span></h2><div class="grid">${list.map(tile).join('')}</div></section>` : '';
-  if (!mids.length) return gapNote() + emptyMsg();
-  // "Group by release" on: three sections, each in the chosen sort order. Off: one list.
-  if (!state.grp) return gapNote() + section('Movies', mids);
+  if (!mids.length) return emptyMsg();
+  // "Group by release type" on: three sections, each in the chosen sort order. Off: one list.
+  if (!state.grp) return section('Movies', mids);
   const of = g => mids.filter(mid => releaseGroup(DATA.movies[mid]) === g);
-  return gapNote() + section('Just released', of('just')) + section('Now playing', of('now'))
-    + section('Re-releases &amp; special events', of('older'));
+  return Object.entries(RELEASE_GROUPS).map(([g, label]) => section(label, of(g))).join('');
 }
 function renderDetail(mid) {
   const m = DATA.movies[mid];
@@ -544,24 +677,39 @@ function renderDetail(mid) {
       ${m.cast ? `<div class="cast">${esc(m.cast)}</div>` : ''}
       <a class="more" href="${esc(m.url)}" target="_blank" rel="noopener">Details &amp; trailer ›</a>
       · <a class="more chk" href="${esc(movieCheck(m))}" target="_blank" rel="noopener">${m.rt && m.rt.tix ? 'All theaters on Fandango' : 'More showtimes on Google'} ↗</a>
-    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>${gapNote()}`;
+    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>`;
 }
 function renderTheaters() {
   const byT = groupBy(visibleGroups(), 'tid');
   const tids = DATA.theaters.filter(t => shown(t.id)).sort(theaterOrder).map(t => t.id);
   const card = tid => {
     const t = theaterById[tid], byM = groupBy(byT[tid] || [], 'mid');
-    const mids = Object.keys(byM).sort((a, b) => DATA.movies[a].title.localeCompare(DATA.movies[b].title));
-    const body = mids.length ? mids.map(mid => {
-      const m = DATA.movies[mid];
+    // Sort by applies within each theater, counting that theater's showings only.
+    const mids = sortMovies(byM).mids;
+    const left = (byT[tid] || []).reduce((n, g) => n + upcoming(g).length, 0);
+    const folded = state.fold.has(tid);
+    // Title on its own line; rating, length, year and scores on the line under it (as on the movie tiles).
+    const film = mid => {
+      const m = DATA.movies[mid], meta = metaLine(m);
       return `<div class="tmovie"><div data-mid="${mid}">${art(m)}</div><div class="body">
-        <div class="ttl"><h3><a data-mid="${mid}">${esc(m.title)}</a></h3><span class="meta">${metaLine(m)}</span>${ratings(m, false)}</div>
+        <h3><a data-mid="${mid}">${esc(m.title)}</a></h3>
+        <div class="mline">${meta ? `<span class="meta">${meta}</span>` : ''}${ratings(m, false)}</div>
         ${formatRows(byM[mid])}</div></div>`;
-    }).join('') : `<div class="none">${state.q ? 'No matching movies here.'
+    };
+    // Group by release type: the same three groups as the Movies view, as labels inside the theater.
+    const films = !state.grp ? mids.map(film).join('') : Object.entries(RELEASE_GROUPS).map(([g, label]) => {
+      const l = mids.filter(mid => releaseGroup(DATA.movies[mid]) === g);
+      return l.length ? `<div class="tgroup inside">${label} <span>${l.length}</span></div>` + l.map(film).join('') : '';
+    }).join('');
+    const body = folded ? '' : mids.length ? films : `<div class="none">${state.q ? 'No matching movies here.'
       : unlisted(tid, state.date) ? `Couldn't fetch showtimes here for ${dayWord(state.date)}. <a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener">Check times on Google ↗</a>`
       : 'No upcoming showings.'}</div>`;
-    return `<article class="card"><div class="thead"><div><h2><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a></h2>
-      <div class="meta">${esc(t.address)}</div></div>
+    const sum = mids.length ? `${mids.length} movie${mids.length === 1 ? '' : 's'} · ${left} screening${left === 1 ? '' : 's'}` : '';
+    // Tapping the header (anywhere but its buttons) folds the theater down to this header.
+    return `<article class="card${folded ? ' folded' : ''}"><div class="thead" data-fold="${esc(tid)}" role="button" tabindex="0" aria-expanded="${!folded}"
+        title="${folded ? 'Show' : 'Hide'} this theater's movies">
+      <div class="tname">${CARET}<div><h2>${esc(t.name)}</h2>
+      <div class="meta">${esc(t.address)}</div>${sum ? `<div class="meta tsum">${sum}</div>` : ''}</div></div>
       <div class="tbtns"><a class="btn" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener" title="Check this theater's showtimes on Google">Check times ↗</a>
       <a class="btn" href="${esc(t.maps)}" target="_blank" rel="noopener">Directions</a></div></div>${body}</article>`;
   };
@@ -617,6 +765,12 @@ function renderTheaterList(revealId) {
     : state.inView ? `${ts.length} of ${pool}${kindWord} in view`
     : `${pool}${kindWord}`;                                     // "All theaters · 25", "· 15 major"
   const allName = (state.inView ? 'All in view' : 'All theaters');
+  // Phones: the one-line summary shown while the map and list are folded away.
+  const tw = n => `theater${n === 1 ? '' : 's'}`;
+  $('wsum').innerHTML = picks.size ? `<b>${picks.size}</b> ${tw(picks.size)} picked`
+    : state.inView ? `<b>${ts.length}</b> of ${pool}${kindWord} ${tw(pool)}`
+    : `<b>All ${pool}</b>${kindWord} ${tw(pool)}`;
+  $('wupd').textContent = updatedLine;
   const rowOf = (t, i) => row(t.id, '', t.name, '', counts[i], t.address, picks.has(t.id), t);
   // Both kinds listed: each kind is one column (.tcol) under its label, so on a two-column desktop
   // list major chains sit on the left and smaller theaters on the right; a one-column list (phones)
@@ -783,7 +937,7 @@ function setData(d) {
   $('city').textContent = DATA.city;
   document.title = 'Showtimes · ' + DATA.city;
   const gen = new Date(DATA.generated);
-  $('updated').innerHTML = `Updated ${DOW[gen.getDay()]} ${fmtTime(gen.getHours() * 100 + gen.getMinutes())}`;
+  updatedLine = `Updated ${DOW[gen.getDay()]} ${fmtTime(gen.getHours() * 100 + gen.getMinutes())}`;
   const notes = [];
   const ageH = (Date.now() - gen.getTime()) / 36e5;
   if (!futureDates.length) notes.push('These times are all in the past. The page needs a rebuild for current showtimes.');
@@ -801,18 +955,61 @@ async function loadCity(slug) {
   store.set('city', { slug });
   const u = new URL(location.href);
   u.search = '?city=' + slug;
+  if (!state.movie) u.hash = '';
   history.replaceState(null, '', u);
 }
-/* The box takes one of the covered cities only (the dropdown lists them); a start of a name is
-   enough ("hous" -> Houston). Anything else gets a note rather than a guess. */
-async function goTo(text) {
-  const t = text.trim(); if (!t) return;
-  const norm = s => s.toLowerCase().replace(/[^a-z]/g, '');
-  const hit = CITIES.find(c => norm(c.city) === norm(t)) || CITIES.find(c => norm(c.city).startsWith(norm(t)) && norm(t).length >= 3);
+/* ---------- city chooser: the city name in the title opens a list of the covered cities ----------
+   Scroll and tap, or type to narrow it: a typed word matches the start of any word of the name
+   ("san" -> the San cities, "tx" -> every Texas city), and "newy" matches New York. */
+const cityNorm = s => s.toLowerCase().replace(/[^a-z]/g, '');
+let cityHits = [], cityAct = 0, cityKeyed = false;   // cityKeyed: typed or arrowed, so show the highlight
+function cityMatches(q) {
+  const n = cityNorm(q), all = [...CITIES].sort((a, b) => a.city.localeCompare(b.city));
+  if (!n) return all;
+  return all.filter(c => cityNorm(c.city).startsWith(n) || c.city.toLowerCase().split(/[^a-z]+/).some(w => w.startsWith(n)));
+}
+function renderCityList() {
+  cityHits = cityMatches($('cq').value);
+  cityAct = Math.min(cityAct, Math.max(cityHits.length - 1, 0));
+  const cur = DATA && DATA.slug, typed = $('cq').value.trim();
+  $('clist').innerHTML = cityHits.length ? cityHits.map((c, i) =>
+    `<button type="button" class="copt${cityKeyed && i === cityAct ? ' act' : ''}" role="option" data-slug="${esc(c.slug)}"
+      aria-selected="${c.slug === cur}">${esc(c.city)}</button>`).join('')
+    : `<div class="cnone">No covered city matches “${esc(typed)}”.</div>`;
+  const act = $('clist').querySelector('.act'); if (act) scrollList(act, false);
+}
+// Scroll the city list only (scrollIntoView would also scroll the page under the sticky header).
+function scrollList(el, center) {
+  const l = $('clist'), top = el.offsetTop - l.offsetTop, bot = top + el.offsetHeight;
+  if (center) l.scrollTop = top - (l.clientHeight - el.offsetHeight) / 2;
+  else if (top < l.scrollTop) l.scrollTop = top;
+  else if (bot > l.scrollTop + l.clientHeight) l.scrollTop = bot - l.clientHeight;
+}
+function openCities() {
+  const b = $('cityb'), pop = $('cpop'), row = b.closest('.titlerow');
+  $('cq').value = ''; cityAct = 0; cityKeyed = false;
+  pop.hidden = false; b.setAttribute('aria-expanded', 'true');
+  // Line the panel up just under the city name, keeping it inside the page (phones: CSS makes it full width).
+  const br = b.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  pop.style.top = (br.bottom - rr.top + 6) + 'px';
+  pop.style.left = Math.max(0, Math.min(br.left - rr.left - 8, row.clientWidth - pop.offsetWidth)) + 'px';
+  renderCityList();
+  const cur = $('clist').querySelector('[aria-selected="true"]'); if (cur) scrollList(cur, true);
+  // Only jump into the type box with a mouse: on a phone that would throw up the keyboard over the list.
+  if (matchMedia('(pointer: fine)').matches) $('cq').focus();
+}
+function closeCities(refocus) {
+  if ($('cpop').hidden) return;
+  $('cpop').hidden = true; $('cityb').setAttribute('aria-expanded', 'false');
+  if (refocus) $('cityb').focus();
+}
+async function pickCity(slug) {
+  closeCities();
+  if (DATA && slug === DATA.slug) return;
+  state.movie = null; openedHere = false;   // a film page from the old city wouldn't exist in the new one
   $('notes').querySelectorAll('.plain').forEach(n => n.remove());
-  if (!hit) return locNote(`“${esc(t)}” isn't one of the covered cities. Pick one from the list as you type.`);
-  $('loc').value = ''; $('loc').blur();
-  return loadCity(hit.slug);
+  try { await loadCity(slug); }
+  catch (e) { locNote(`Couldn't load showtimes for that city. Try again in a minute.`); }
 }
 
 /* ---------- routing: #m/<id> opens a movie, so Back works ---------- */
@@ -858,18 +1055,83 @@ function setView(v) { state.view = v; store.set('view', v); if (state.movie) loc
 $('vMovies').onclick = () => setView('movies');
 $('vTheaters').onclick = () => setView('theaters');
 $('q').addEventListener('input', e => { state.q = e.target.value; if (state.movie) location.hash = ''; else render(); });
-$('locform').addEventListener('submit', e => { e.preventDefault(); goTo($('loc').value); });
-$('loc').addEventListener('change', e => { if (CITIES.some(c => c.city === e.target.value)) goTo(e.target.value); });
+$('cityb').addEventListener('click', () => $('cpop').hidden ? openCities() : closeCities());
+$('cq').addEventListener('input', () => { cityAct = 0; cityKeyed = !!$('cq').value.trim(); renderCityList(); });
+$('cq').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    // The first arrow press shows the highlight where it is (the top); later ones move it.
+    if (cityKeyed) cityAct = (cityAct + (e.key === 'ArrowDown' ? 1 : -1) + cityHits.length) % Math.max(cityHits.length, 1);
+    cityKeyed = true;
+    renderCityList();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (cityKeyed && cityHits[cityAct]) pickCity(cityHits[cityAct].slug);
+  }
+});
+$('clist').addEventListener('click', e => { const b = e.target.closest('[data-slug]'); if (b) pickCity(b.dataset.slug); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCities(true); });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#cpop, #cityb')) closeCities(); });
+/* Phones: the map + theater list open or fold into the one-line #wherebar (CSS ignores it on computers). */
+function applyWhere() {
+  $('area').classList.toggle('folded', !state.whereOpen);
+  $('wherebar').setAttribute('aria-expanded', state.whereOpen);
+}
+$('wherebar').addEventListener('click', () => { state.whereOpen = !state.whereOpen; store.set('where', state.whereOpen); applyWhere(); });
+/* Phones: scrolling down tucks the title row (city, search, Movies/Theaters) up under the top edge so
+   the dates stay and the movies get the room; any scroll up brings it back. Not while the city list
+   is open or the movie search box is in use. */
+let lastY = 0;
+const PHONE = '(max-width: 520px)';
+window.addEventListener('scroll', () => {
+  const y = window.scrollY, h = document.querySelector('header.top');
+  const keep = !matchMedia(PHONE).matches || !$('cpop').hidden || document.activeElement === $('q') || y < 120;
+  if (keep) h.classList.remove('tuck');
+  else if (y > lastY + 4) { h.style.setProperty('--tuck', document.querySelector('.titlerow').offsetHeight + 'px'); h.classList.add('tuck'); }
+  else if (y < lastY - 4) h.classList.remove('tuck');
+  if (keep || Math.abs(y - lastY) > 4) lastY = y;
+}, { passive: true });
+$('q').addEventListener('focus', () => document.querySelector('header.top').classList.remove('tuck'));
+// Swiping the sort line sideways would leave an open menu behind; close it.
+$('toolbar').addEventListener('scroll', () => closeMenu(), true);
+function toggleFold(tid) {
+  state.fold.has(tid) ? state.fold.delete(tid) : state.fold.add(tid);
+  store.set('fold', [...state.fold]);
+  render();
+  const h = document.querySelector(`[data-fold="${CSS.escape(tid)}"]`); if (h) h.focus({ preventScroll: true });
+}
+$('main').addEventListener('keydown', e => {
+  if ((e.key !== 'Enter' && e.key !== ' ') || e.target.closest('a')) return;
+  const h = e.target.closest('[data-fold]'); if (h) { e.preventDefault(); toggleFold(h.dataset.fold); }
+});
 $('main').addEventListener('click', e => {
   if (e.target.closest('#back')) return closeMovie();
+  const h = e.target.closest('[data-fold]');
+  if (h) { if (!e.target.closest('a')) toggleFold(h.dataset.fold); return; }
   const t = e.target.closest('[data-mid]'); if (t) openMovie(t.dataset.mid);
 });
-$('toolbar').addEventListener('change', e => {
-  if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort2', state.sort); }
-  if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
-  if (e.target.id === 'grp') { state.grp = e.target.checked; store.set('grp', state.grp); }
-  render();
+$('toolbar').addEventListener('click', e => {
+  const m = e.target.closest('[data-menu]');
+  if (m) return menuFor === m.dataset.menu ? closeMenu() : openMenu(m);
+  if (e.target.closest('#grp')) { state.grp = !state.grp; store.set('grp', state.grp); render(); }
 });
+$('menu').addEventListener('click', e => {
+  const o = e.target.closest('[data-val]'); if (!o) return;
+  const key = menuFor;
+  MENUS[key].set(o.dataset.val); closeMenu(); render();
+  const b = document.querySelector(`[data-menu="${key}"]`); if (b) b.focus();
+});
+// Up/Down move through the choices, Enter or Space picks (they're buttons), Tab leaves.
+$('menu').addEventListener('keydown', e => {
+  const os = [...$('menu').querySelectorAll('.copt')], i = os.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    os[(i + (e.key === 'ArrowDown' ? 1 : -1) + os.length) % os.length].focus();
+  } else if (e.key === 'Tab') closeMenu();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(true); });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#menu, [data-menu]')) closeMenu(); });
+window.addEventListener('resize', () => closeMenu());
 $('theaters').addEventListener('click', e => {
   const b = e.target.closest('[data-size]'); if (!b) return;
   state.size = b.dataset.size; store.set('size', state.size);
@@ -879,9 +1141,10 @@ $('theaters').addEventListener('click', e => {
 /* ---------- start ---------- */
 (async function start() {
   readHash();
+  applyWhere();
   setupMap();
   if (EMBEDDED) {
-    $('locform').hidden = true;
+    $('cityb').disabled = true;   // one city baked in: nothing to choose
     setData(DATA);
     return;
   }
@@ -891,7 +1154,6 @@ $('theaters').addEventListener('click', e => {
     $('main').innerHTML = '<div class="empty">Could not load the city list.</div>';
     return;
   }
-  $('citylist').innerHTML = CITIES.map(c => `<option value="${esc(c.city)}">`).join('');
   const params = new URLSearchParams(location.search);
   const saved = store.get('city', null);
   try {
@@ -904,7 +1166,8 @@ $('theaters').addEventListener('click', e => {
   }
 })();
 // Drop showings as they start, while the page is open.
-setInterval(() => { if (DATA && !document.querySelector('select:focus')) render(); }, 60000);
+// (Not while a menu or the city list is open: re-drawing would pull it out from under the viewer.)
+setInterval(() => { if (DATA && !menuFor && $('cpop').hidden) render(); }, 60000);
 </script>
 </body>
 </html>

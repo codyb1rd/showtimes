@@ -5,7 +5,7 @@ Rotten Tomatoes and Letterboxd scores, and a tap-to-buy link on each showing.
 
 A GitHub Actions job rebuilds every city in `cities.txt` twice a day and publishes the site
 with GitHub Pages. Each city covers theaters within 20 miles of its nearest theater, capped at
-the nearest 25. Search takes one of the covered cities.
+the nearest 25. Tap the city name in the title to switch to another covered city.
 
 Run locally (Python 3, standard library only):
 
