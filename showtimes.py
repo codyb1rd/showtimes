@@ -25,6 +25,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import gfill
+
 BASE = "https://www.cinemaclock.com"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 HERE = Path(__file__).resolve().parent
@@ -364,8 +366,11 @@ def build_cities(slugs, radius, cap, no_ratings=False, workers=4, log=print):
         posters = {mid: ex.submit(poster_bytes, mid, m["poster"]) for mid, m in movies.items() if m["poster"]}
         images = {mid: f.result() for mid, f in posters.items()}
 
+    # Top up a few cities with Google's showtimes where cinemaclock is known to fall short (gfill.py).
+    gfill.apply(cities, parsed, movies, CACHE.parent / "gfill.json", log=log)
     for m in movies.values():
-        m["url"] = f"{BASE}/movies/{m['slug']}"
+        if m["slug"]:                 # a film only Google listed has no cinemaclock page; gfill set its url
+            m["url"] = f"{BASE}/movies/{m['slug']}"
     generated = dt.datetime.now().astimezone().isoformat(timespec="minutes")
     for c in cities.values():
         groups = [g for t in c["theaters"] for g in parsed.get(t["slug"], [])]

@@ -69,7 +69,7 @@ h1 span { color: var(--accent); }
 .tlist { position: relative; flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); align-content: start; gap: 1px 14px;
   padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
-.trow { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: 9px;
+.trow { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 9px;
   padding: 5px 8px; border: 0; border-radius: 7px; background: none; text-align: left; cursor: pointer;
   font-size: 13.5px; line-height: 1.25; }
 .trow:hover, .trow.hot { background: var(--chip); }
@@ -81,8 +81,11 @@ h1 span { color: var(--accent); }
 .trow .mi, .trow .ct { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .trow .ct { min-width: 4.6em; }
 .trow .ct b { color: var(--ink); font-weight: 600; }
+.trow .ct.gap { color: var(--accent); text-decoration: none; }
+.trow .ct.gap:hover { text-decoration: underline; }
+.gapnote { margin: 0 0 16px; }
 .trow.zero { opacity: .45; }
-.trow.all { grid-column: 1 / -1; font-weight: 600; }
+.trow.all { grid-column: 1 / -1; font-weight: 600; grid-template-columns: 8px minmax(0, 1fr) auto auto; }
 .trow.all .pin { background: none; box-shadow: inset 0 0 0 2px var(--pin); }
 .trow.all[aria-pressed="true"] .pin { box-shadow: inset 0 0 0 2px var(--accent); }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap; margin: 0 0 18px; }
@@ -181,6 +184,15 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
 .btn { flex: none; font-size: 13px; padding: 5px 10px; border: 1px solid var(--chip-line); border-radius: 8px; text-decoration: none; background: var(--chip); }
 .btn:hover { border-color: var(--accent); }
 .tbtns { display: flex; gap: 6px; flex: none; }
+.toolbar .seg { margin-left: 0; }
+.seg.sm button { height: 27px; font-size: 13px; padding: 0 10px; }
+.tcol { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* Section labels in the theater list (Major chains / Smaller theaters) and the Theaters view. */
+.tgroup { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); padding: 7px 8px 2px; }
+.tgroup span, .sech.tsec span { font-weight: 400; }
+.sech.tsec { margin: 22px 0 10px; }
+.sech.tsec:first-child { margin-top: 0; }
 .chk { color: var(--accent); text-decoration: none; }
 .chk:hover { text-decoration: underline; }
 .tmovie { border-top: 1px solid var(--line); padding: 10px 14px; display: flex; gap: 12px; }
@@ -204,7 +216,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16
       </div>
     </div>
     <div class="controls">
-      <form id="locform" autocomplete="off"><input class="field" id="loc" list="citylist" type="search" placeholder="City or zip" enterkeyhint="go"></form>
+      <form id="locform" autocomplete="off"><input class="field" id="loc" list="citylist" type="search" placeholder="City" enterkeyhint="go"></form>
       <input class="field" id="q" type="search" placeholder="Search movies" autocomplete="off">
     </div>
     <datalist id="citylist"></datalist>
@@ -221,7 +233,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16
   <main id="main"></main>
 </div>
 <footer>Listings come from cinemaclock.com and can miss new bookings; check the theater's own site to be sure.<br>
-Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd · zip lookup by zippopotam.us · map © OpenStreetMap contributors.</footer>
+Times and ticket links from cinemaclock.com · scores from Rotten Tomatoes and Letterboxd · map © OpenStreetMap contributors.</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -254,10 +266,10 @@ const state = {
   sort: store.get('sort2', 'popular'),
   after: store.get('after', 0),
   date: null, q: '', movie: null,
+  size: store.get('size', 'all'),   // 'all', 'major' or 'minor' theaters (see theaterKind)
   picked: new Set(),  // theater ids to show; empty means all
   inView: null,       // theater ids inside the map view; null when every theater is in view
-  origin: null,       // {lat, lon, label}: where distances are measured from
-  zip: null           // the zip or "City, ST" the viewer searched, when not a covered city
+  origin: null        // {lat, lon, label}: the city's center (its nearest theater), for the start view
 };
 let CITIES = [], theaterById = {}, dates = [], futureDates = [];
 
@@ -311,31 +323,80 @@ function ratings(m, link) {
     : wrap('lb', m.lb.url, `<span class="lbdots"><i></i><i></i><i></i></span>${m.lb.score.toFixed(1)}`));
   return out.length ? `<div class="ratings">${out.join('')}</div>` : '';
 }
+/* A showing's link is a cinemaclock ticket id, or for a showing that came from Google's listings
+   (gfill.py) the Google page for that film there, which carries the ticket options. */
 function chips(times) {
   return times.map(([t, tix]) => tix
-    ? `<a class="time" href="${esc(DATA.tixBase + tix)}" target="_blank" rel="noopener" title="Buy tickets">${fmtTime(t)}</a>`
+    ? (/^https:\/\//.test(tix)
+      ? `<a class="time" href="${esc(tix)}" target="_blank" rel="noopener" title="Showtime from Google: opens Google for tickets">${fmtTime(t)}</a>`
+      : `<a class="time" href="${esc(DATA.tixBase + tix)}" target="_blank" rel="noopener" title="Buy tickets">${fmtTime(t)}</a>`)
     : `<span class="time notix" title="No online ticketing — buy at the theater">${fmtTime(t)}</span>`).join('');
 }
 function formatRows(groups) {
   return groups.map(g => [g, upcoming(g)]).filter(([, ts]) => ts.length)
     .map(([g, ts]) => `<div class="frow"><div class="flabel">${fmtLabel(g)}</div><div class="times">${chips(ts)}</div></div>`).join('');
 }
-const fmtDist = t => t.dist < 10 ? t.dist.toFixed(1) + ' mi' : Math.round(t.dist) + ' mi';
 /* cinemaclock can miss bookings (a chain's new run that hasn't reached it yet), so every theater and
    movie links out to a complete listing: Google's showtimes for a theater, and for a movie its
    Fandango page (every theater showing it, from Rotten Tomatoes) or, failing that, Google. */
 const google = q => 'https://www.google.com/search?q=' + encodeURIComponent(q);
 const theaterCheck = t => google(`${t.name} ${t.address} showtimes`);
 const movieCheck = m => m.rt && m.rt.tix ? m.rt.tix
-  : google(`${m.title} showtimes near ${state.zip || DATA.city}`);
+  : google(`${m.title} showtimes near ${DATA.city}`);
+
+/* A theater is "not listed" on a day when cinemaclock has no times for it at all that day although
+   the theater is otherwise covered: it has times on a later day (a feed that skipped today), or none
+   all week while the city's theaters are typically listed through that day. That is a gap in the
+   source, not "nothing showing", so the page says it can't show times and links out instead of 0. */
+let listed = {}, horizon = '';
+function indexListings() {
+  listed = {};
+  DATA.groups.forEach(g => Object.entries(g.days).forEach(([d, ts]) => { if (ts.length) (listed[g.tid] ??= new Set()).add(d); }));
+  const lasts = DATA.theaters.map(t => listed[t.id] && [...listed[t.id]].sort().pop()).filter(Boolean).sort();
+  horizon = lasts.length ? lasts[Math.floor(lasts.length / 2)] : '';   // the city's median last listed day
+  DATA.theaters.forEach(t => { t.kind = theaterKind(t); });
+}
+/* Major = one of the five national chains, or a large theater. Screen counts aren't published, so
+   "large" is judged from showings: a typical day (median over listed days) of LARGE or more, about
+   what a national-chain multiplex runs. Everything else is a smaller theater. */
+const NATIONAL = /^(amc|regal|edwards|ua |cinemark|century|cinearts|tinseltown|marcus|movie tavern|cin[eé]polis)/i;
+const LARGE = 40;
+function theaterKind(t) {
+  if (NATIONAL.test(t.name)) return 'major';
+  const perDay = {};
+  DATA.groups.forEach(g => { if (g.tid === t.id) for (const [d, ts] of Object.entries(g.days)) perDay[d] = (perDay[d] || 0) + ts.length; });
+  const n = Object.values(perDay).filter(Boolean).sort((a, b) => a - b);
+  return n.length && n[Math.floor(n.length / 2)] >= LARGE ? 'major' : 'minor';
+}
+const KIND = { major: 'Major chains', minor: 'Smaller theaters' };
+/* Only a major theater is flagged for a single missing day: chains don't go dark midweek, while a
+   smaller theater is often closed on set days, and "couldn't fetch" would be false there. A theater
+   with nothing listed all week is flagged whatever its size. */
+function unlisted(tid, date) {
+  const s = listed[tid];
+  if (!s) return date <= horizon;
+  if (s.has(date) || theaterById[tid].kind !== 'major') return false;
+  return date <= [...s].sort().pop();
+}
+const dayWord = d => d === today ? 'today' : d === tomorrow ? 'tomorrow' : (l => `${l.top} ${l.sub}`)(dateLabel(d));
+/* One line naming the shown theaters with no listings for the selected day, each linked out. */
+function gapNote() {
+  const gaps = DATA.theaters.filter(t => shown(t.id) && unlisted(t.id, state.date));
+  if (!gaps.length) return '';
+  const links = gaps.map(t => `<a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener">${esc(t.name)} ↗</a>`).join(', ');
+  return `<div class="note plain gapnote">Couldn't fetch showtimes for ${dayWord(state.date)} at ${links}. ` +
+    `Each link opens that theater's showtimes on Google.</div>`;
+}
 
 /* ---------- selection ---------- */
 /* The map view narrows first, then tapped theaters narrow within it. A pick that has left the
    view is set aside (not shown) until the view includes it again or the next tap clears it. */
 let livePicks = new Set();
 const inView = tid => !state.inView || state.inView.has(tid);
-function scope() { livePicks = new Set([...state.picked].filter(inView)); }
-const shown = tid => inView(tid) && (!livePicks.size || livePicks.has(tid));
+const sizeOk = tid => state.size === 'all' || theaterById[tid].kind === state.size;
+const inScope = tid => inView(tid) && sizeOk(tid);          // map view and the All/Major/Smaller filter
+function scope() { livePicks = new Set([...state.picked].filter(inScope)); }
+const shown = tid => inScope(tid) && (!livePicks.size || livePicks.has(tid));
 function visibleGroups() {
   const q = state.q.trim().toLowerCase();
   return DATA.groups.filter(g => g.days[state.date] && shown(g.tid)
@@ -366,7 +427,10 @@ function sortMovies(byMovie) {
 /* ---------- views ---------- */
 function toolbar() {
   const opt = (v, l, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${l}</option>`;
+  const sizes = [['all', 'All'], ['major', 'Major'], ['minor', 'Smaller']];
   return `<div class="toolbar">
+    <div class="seg sm" role="group" aria-label="Theater size">${sizes.map(([v, l]) =>
+      `<button data-size="${v}" aria-pressed="${state.size === v}" title="${v === 'all' ? 'All theaters' : KIND[v]}">${l}</button>`).join('')}</div>
     ${state.view === 'movies' ? `<label>Sort <select id="sort">${Object.entries(SORTS).map(([v, l]) => opt(v, l, state.sort)).join('')}</select></label>` : ''}
     <label>Starts after <select id="after">${AFTER.map(([v, l]) => opt(v, l, state.after)).join('')}</select></label></div>`;
 }
@@ -392,15 +456,17 @@ function renderGrid() {
   const older = mids.filter(mid => (DATA.movies[mid].kind || 'new') !== 'new');
   const section = (title, list) => list.length
     ? `<section class="msec"><h2 class="sech">${title}<span>${list.length}</span></h2><div class="grid">${list.map(tile).join('')}</div></section>` : '';
-  return mids.length ? section('New releases', fresh) + section('Re-releases &amp; special events', older) : emptyMsg();
+  return gapNote() + (mids.length ? section('New releases', fresh) + section('Re-releases &amp; special events', older) : emptyMsg());
 }
 function renderDetail(mid) {
   const m = DATA.movies[mid];
   const gs = DATA.groups.filter(g => g.mid === mid && g.days[state.date] && shown(g.tid) && upcoming(g).length);
   const byT = groupBy(gs, 'tid');
-  const venues = Object.keys(byT).sort(byDist).map(tid => {
+  // Theaters with the most showings of this movie left first, ties nearest the center first.
+  const left = tid => byT[tid].reduce((n, g) => n + upcoming(g).length, 0);
+  const venues = Object.keys(byT).sort((a, b) => left(b) - left(a) || byDist(a, b)).map(tid => {
     const t = theaterById[tid];
-    return `<div class="venue"><div class="vname"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a><span class="dist">${fmtDist(t)} · <a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener" title="Check this theater's showtimes on Google">check times ↗</a></span></div>${formatRows(byT[tid])}</div>`;
+    return `<div class="venue"><div class="vname"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a><span class="dist"><a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener" title="Check this theater's showtimes on Google">check times ↗</a></span></div>${formatRows(byT[tid])}</div>`;
   }).join('');
   const after = state.after ? ' after ' + AFTER.find(a => a[0] === state.after)[1] : '';
   const where = livePicks.size === 1 ? ' at ' + esc(theaterById[[...livePicks][0]].name)
@@ -411,12 +477,12 @@ function renderDetail(mid) {
       ${m.cast ? `<div class="cast">${esc(m.cast)}</div>` : ''}
       <a class="more" href="${esc(m.url)}" target="_blank" rel="noopener">Details &amp; trailer ›</a>
       · <a class="more chk" href="${esc(movieCheck(m))}" target="_blank" rel="noopener">${m.rt && m.rt.tix ? 'All theaters on Fandango' : 'More showtimes on Google'} ↗</a>
-    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>`;
+    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>${gapNote()}`;
 }
 function renderTheaters() {
   const byT = groupBy(visibleGroups(), 'tid');
-  const tids = DATA.theaters.map(t => t.id).filter(shown);
-  const cards = tids.map(tid => {
+  const tids = DATA.theaters.filter(t => shown(t.id)).sort(theaterOrder).map(t => t.id);
+  const card = tid => {
     const t = theaterById[tid], byM = groupBy(byT[tid] || [], 'mid');
     const mids = Object.keys(byM).sort((a, b) => DATA.movies[a].title.localeCompare(DATA.movies[b].title));
     const body = mids.length ? mids.map(mid => {
@@ -424,14 +490,22 @@ function renderTheaters() {
       return `<div class="tmovie"><div data-mid="${mid}">${art(m)}</div><div class="body">
         <div class="ttl"><h3><a data-mid="${mid}">${esc(m.title)}</a></h3><span class="meta">${metaLine(m)}</span>${ratings(m, false)}</div>
         ${formatRows(byM[mid])}</div></div>`;
-    }).join('') : `<div class="none">${state.q ? 'No matching movies here.' : 'No upcoming showings.'}</div>`;
+    }).join('') : `<div class="none">${state.q ? 'No matching movies here.'
+      : unlisted(tid, state.date) ? `Couldn't fetch showtimes here for ${dayWord(state.date)}. <a class="chk" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener">Check times on Google ↗</a>`
+      : 'No upcoming showings.'}</div>`;
     return `<article class="card"><div class="thead"><div><h2><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a></h2>
-      <div class="meta">${esc(t.address)} · ${fmtDist(t)}</div></div>
+      <div class="meta">${esc(t.address)}</div></div>
       <div class="tbtns"><a class="btn" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener" title="Check this theater's showtimes on Google">Check times ↗</a>
       <a class="btn" href="${esc(t.maps)}" target="_blank" rel="noopener">Directions</a></div></div>${body}</article>`;
-  }).join('');
+  };
+  // Major chains first, then smaller theaters, each by theaterOrder, with a heading when both appear.
+  const groups = ['major', 'minor'].map(k => [k, tids.filter(tid => theaterById[tid].kind === k)]).filter(([, l]) => l.length);
+  const cards = groups.map(([k, l]) => (groups.length > 1 ? `<h2 class="sech tsec">${KIND[k]}<span>${l.length}</span></h2>` : '')
+    + l.map(card).join('')).join('');
   setBar(toolbar());
-  return cards || '<div class="empty">No theaters in this part of the map. Zoom out, or tap Reset map.</div>';
+  return cards || `<div class="empty">${DATA.theaters.some(t => sizeOk(t.id))
+    ? 'No theaters in this part of the map. Zoom out, or tap Reset map.'
+    : `No ${state.size === 'major' ? 'major' : 'smaller'} theaters in this area.`}</div>`;
 }
 
 function renderDates() {
@@ -444,24 +518,52 @@ function renderDates() {
 function screeningsAt(tid) {
   return DATA.groups.reduce((n, g) => g.tid === tid && g.days[state.date] ? n + upcoming(g).length : n, 0);
 }
+/* Theaters with the most showings left first; ones whose showtimes couldn't be fetched last; ties
+   nearest the center first. Used by the theater list and the Theaters view. */
+function theaterOrder(a, b) {
+  const gap = t => unlisted(t.id, state.date) ? 1 : 0;
+  return gap(a) - gap(b) || screeningsAt(b.id) - screeningsAt(a.id) || a.dist - b.dist;
+}
+const byKind = (a, b) => (a.kind === b.kind ? 0 : a.kind === 'major' ? -1 : 1) || theaterOrder(a, b);
 function renderTheaterList(revealId) {
   const list = $('theaters'), top = list.scrollTop, picks = livePicks;
   const unit = state.date === today ? 'left' : 'shows';
-  const ts = DATA.theaters.filter(t => inView(t.id));   // theaters outside the map view leave the list
+  // Theaters outside the map view, or left out by All/Major/Smaller, leave the list. Major chains
+  // come first, then smaller theaters, each ordered by theaterOrder.
+  const ts = DATA.theaters.filter(t => inScope(t.id)).sort(byKind);
   const counts = ts.map(t => screeningsAt(t.id));
   // The All row totals what's being shown: the picked theaters, or every listed theater when none are picked.
   const total = ts.reduce((n, t, i) => n + (shown(t.id) ? counts[i] : 0), 0);
-  const row = (id, cls, name, mi, n, title, pressed) =>
-    `<button class="trow ${cls}${n ? '' : ' zero'}" data-tid="${id}" aria-pressed="${pressed}" title="${esc(title)}">` +
-    `<span class="pin"></span><span class="nm">${esc(name)}</span><span class="mi">${mi}</span><span class="ct"><b>${n.toLocaleString()}</b> ${unit}</span></button>`;
-  const n = DATA.theaters.length;
-  const allMeta = state.inView
-    ? (picks.size ? `${picks.size} of ${ts.length} in view picked` : `${ts.length} of ${n} in view`)
-    : (picks.size ? `${picks.size} of ${n} picked` : `${n} within ${DATA.radius} mi`);
-  list.innerHTML = row('', 'all', state.inView ? 'All in view' : 'All theaters', allMeta, total,
-      picks.size ? 'Show every theater' : DATA.city, !picks.size) +
-    ts.map((t, i) => row(t.id, '', t.name, fmtDist(t), counts[i], t.address, picks.has(t.id))).join('') +
-    (ts.length ? '' : '<div class="tnone">No theaters in this part of the map.</div>');
+  // A row is a div acting as a button (not a <button>) so a "not listed" row can hold a real link.
+  // `mi` is the All row's summary ("25 theaters"); theater rows have none and drop that column.
+  const row = (id, cls, name, mi, n, title, pressed, t) => {
+    const gap = t && unlisted(t.id, state.date);
+    const ct = gap
+      ? `<a class="ct gap" href="${esc(theaterCheck(t))}" target="_blank" rel="noopener" title="Couldn't fetch showtimes for ${esc(dayWord(state.date))}. Opens this theater's showtimes on Google.">not listed ↗</a>`
+      : `<span class="ct"><b>${n.toLocaleString()}</b> ${unit}</span>`;
+    return `<div class="trow ${cls}${n || gap ? '' : ' zero'}" role="button" tabindex="0" data-tid="${id}" aria-pressed="${pressed}" title="${esc(title)}">` +
+      `<span class="pin"></span><span class="nm">${esc(name)}</span>${mi ? `<span class="mi">${mi}</span>` : ''}${ct}</div>`;
+  };
+  const kindWord = { all: '', major: ' major', minor: ' smaller' }[state.size];
+  const pool = DATA.theaters.filter(t => sizeOk(t.id)).length;   // theaters the size filter allows
+  const allMeta = picks.size ? `${picks.size} of ${ts.length} picked`
+    : state.inView ? `${ts.length} of ${pool}${kindWord} in view`
+    : `${pool}${kindWord}`;                                     // "All theaters · 25", "· 15 major"
+  const allName = (state.inView ? 'All in view' : 'All theaters');
+  const rowOf = (t, i) => row(t.id, '', t.name, '', counts[i], t.address, picks.has(t.id), t);
+  // Both kinds listed: each kind is one column (.tcol) under its label, so on a two-column desktop
+  // list major chains sit on the left and smaller theaters on the right; a one-column list (phones)
+  // stacks them. One kind on its own needs no label and flows across both columns.
+  const both = state.size === 'all' && new Set(ts.map(t => t.kind)).size > 1;
+  const html = both
+    ? ['major', 'minor'].map(k => {
+        const rows = ts.map((t, i) => t.kind === k ? rowOf(t, i) : '').join('');
+        return `<div class="tcol"><div class="tgroup">${KIND[k]} <span>${ts.filter(t => t.kind === k).length}</span></div>${rows}</div>`;
+      }).join('')
+    : ts.map(rowOf).join('');
+  const none = !pool ? `No${kindWord} theaters in this area.` : 'No theaters in this part of the map.';
+  list.innerHTML = row('', 'all', allName, allMeta, total, picks.size ? 'Show every theater' : DATA.city, !picks.size) +
+    html + (ts.length ? '' : `<div class="tnone">${none}</div>`);
   list.scrollTop = top;
   const on = revealId && list.querySelector(`.trow[data-tid="${revealId}"]`);
   if (on && (on.offsetTop < list.scrollTop || on.offsetTop + on.offsetHeight > list.scrollTop + list.clientHeight))
@@ -480,7 +582,7 @@ function render() {
 function renderAll() { $('theaters').scrollTop = 0; renderDates(); render(); }
 
 /* ---------- map ---------- */
-let map = null, markers = {}, originMarker = null, resetBtn = null;
+let map = null, markers = {}, resetBtn = null;
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function setupMap() {
   if (!window.L) return;              // offline or CDN blocked: the page works without the map
@@ -488,7 +590,8 @@ function setupMap() {
   // In the phone layout on a touch screen the map spans the page width, so one-finger drag is left
   // to scrolling the page; two fingers pan and pinch the map. Mouse wheel stays off so scrolling the
   // page never zooms it. setDragging re-checks when the layout changes (rotation, window resize).
-  map = L.map('map', { scrollWheelZoom: false, zoomControl: false });
+  // zoomSnap .25 lets a fitted view sit close to what it was fitted to (whole steps overshoot).
+  map = L.map('map', { scrollWheelZoom: false, zoomControl: false, zoomSnap: 0.25 });
   setDragging();
   map.attributionControl.setPrefix(false);
   L.control.zoom({ position: 'topright' }).addTo(map);
@@ -542,31 +645,41 @@ function updateView() {
 function placeMarkers() {
   if (!map) return;
   Object.values(markers).forEach(m => m.remove());
-  if (originMarker) { originMarker.remove(); originMarker = null; }
   markers = {};
   DATA.theaters.forEach(t => {
     markers[t.id] = L.circleMarker([t.lat, t.lon], { radius: 7, weight: 2 })
-      .bindTooltip(`${esc(t.name)}, ${fmtDist(t)}`, { direction: 'top', offset: [0, -6] })
+      .bindTooltip(esc(t.name), { direction: 'top', offset: [0, -6] })
       .on('click', () => toggleTheater(t.id))
       .on('mouseover', () => hover(t.id)).on('mouseout', () => hover(null))
       .addTo(map);
   });
-  if (state.zip) {
-    originMarker = L.circleMarker([state.origin.lat, state.origin.lon], { radius: 5, weight: 2, color: cssVar('--ink'), fillColor: cssVar('--bg'), fillOpacity: 1 })
-      .bindTooltip(esc(state.origin.label), { direction: 'top', offset: [0, -4] }).addTo(map);
-  }
-  styleMarkers(); fitMap();
+  styleMarkers(); startView();
 }
+const FIT = { padding: [24, 24], maxZoom: 13 };
+const mapPoints = () => DATA.theaters.map(t => [t.lat, t.lon]);
+/* Every theater (and a searched place) in view. Reset map uses this. */
 function fitMap() {
   if (!map || !DATA) return;
-  const pts = DATA.theaters.map(t => [t.lat, t.lon]);
-  if (state.zip) pts.push([state.origin.lat, state.origin.lon]);
-  if (pts.length) map.fitBounds(pts, { padding: [24, 24], maxZoom: 13 });
+  const pts = mapPoints();
+  if (pts.length) map.fitBounds(pts, { ...FIT, animate: false });
+}
+/* A city opens on half its area: the circle of half the city's radius (10 mi of 20) around its
+   center, so the page starts on the nearest theaters and zooming out or Reset map shows the rest.
+   If that view would hold fewer than 2 theaters (a spread-out area), it opens on every theater. */
+function startView() {
+  if (!map || !DATA) return;
+  const half = (DATA.radius || 20) / 2 * 1609.34;                       // miles -> metres
+  const box = L.latLng(state.origin.lat, state.origin.lon).toBounds(half * 2);
+  map.fitBounds(box, { padding: [4, 4], maxZoom: FIT.maxZoom, animate: false });
+  if (DATA.theaters.filter(t => inMapView(t) && sizeOk(t.id)).length < 2) fitMap();   // counts what the size filter shows
 }
 function styleMarkers() {
   if (!map) return;
   const accent = cssVar('--accent'), pin = cssVar('--pin');
   for (const [id, mk] of Object.entries(markers)) {
+    // Theaters the All/Major/Smaller filter leaves out come off the map entirely.
+    if (!sizeOk(id)) { if (map.hasLayer(mk)) mk.remove(); continue; }
+    if (!map.hasLayer(mk)) mk.addTo(map);
     const on = livePicks.has(id), hot = hovered === id, dim = livePicks.size > 0 && !on && !hot;
     mk.setStyle({ color: on ? accent : pin, fillColor: on ? accent : pin, fillOpacity: dim ? .25 : .75, opacity: dim ? .5 : 1, radius: on || hot ? 10 : 7 });
     if (on || hot) mk.bringToFront();
@@ -582,12 +695,13 @@ function hover(id) {
 }
 
 /* ---------- city loading + location search ---------- */
-function setData(d, origin) {
+function setData(d) {
   DATA = d;
-  state.origin = origin || { lat: d.lat ?? d.theaters[0].lat, lon: d.lon ?? d.theaters[0].lon, label: d.city };
+  state.origin = { lat: d.lat ?? d.theaters[0].lat, lon: d.lon ?? d.theaters[0].lon, label: d.city };
   DATA.theaters.forEach(t => { t.dist = miles(state.origin, t); });
   DATA.theaters.sort((a, b) => a.dist - b.dist);
   theaterById = Object.fromEntries(DATA.theaters.map(t => [t.id, t]));
+  indexListings();
   const all = [...new Set(DATA.groups.flatMap(g => Object.keys(g.days)))].sort();
   futureDates = all.filter(d => d >= today);
   dates = futureDates.length ? futureDates : all;
@@ -595,11 +709,10 @@ function setData(d, origin) {
   state.picked = new Set();
   state.inView = null;
   if (resetBtn) resetBtn.hidden = true;
-  $('city').textContent = state.zip ? `near ${state.zip}` : DATA.city;
-  document.title = 'Showtimes · ' + (state.zip ? state.zip : DATA.city);
+  $('city').textContent = DATA.city;
+  document.title = 'Showtimes · ' + DATA.city;
   const gen = new Date(DATA.generated);
-  const from = state.zip ? `Distances from ${esc(state.origin.label)}. ` : '';
-  $('updated').innerHTML = `${from}Updated ${DOW[gen.getDay()]} ${fmtTime(gen.getHours() * 100 + gen.getMinutes())}`;
+  $('updated').innerHTML = `Updated ${DOW[gen.getDay()]} ${fmtTime(gen.getHours() * 100 + gen.getMinutes())}`;
   const notes = [];
   const ageH = (Date.now() - gen.getTime()) / 36e5;
   if (!futureDates.length) notes.push('These times are all in the past. The page needs a rebuild for current showtimes.');
@@ -610,56 +723,31 @@ function setData(d, origin) {
 }
 function locNote(html) { $('notes').insertAdjacentHTML('afterbegin', `<div class="note plain">${html}</div>`); }
 
-async function loadCity(slug, origin, zip) {
+async function loadCity(slug) {
   const res = await fetch(`data/${slug}.json`, { cache: 'no-cache' });
   if (!res.ok) throw new Error('No data for ' + slug);
-  state.zip = zip || null;
-  setData(await res.json(), origin);
-  store.set('city', { slug, origin: origin || null, zip: zip || null });
+  setData(await res.json());
+  store.set('city', { slug });
   const u = new URL(location.href);
-  u.search = zip ? '?near=' + encodeURIComponent(zip) : '?city=' + slug;
+  u.search = '?city=' + slug;
   history.replaceState(null, '', u);
 }
-function nearestCity(p) {
-  return CITIES.map(c => ({ c, d: miles(p, c) })).sort((a, b) => a.d - b.d)[0];
-}
-async function geocode(text) {
-  const zip = text.match(/^\s*(\d{5})\s*$/);
-  if (zip) {
-    const r = await fetch(`https://api.zippopotam.us/us/${zip[1]}`);
-    if (!r.ok) return null;
-    const p = (await r.json()).places[0];
-    return { lat: +p.latitude, lon: +p.longitude, label: `${zip[1]} (${p['place name']}, ${p['state abbreviation']})`, zip: zip[1] };
-  }
-  const m = text.match(/^\s*(.+?)[,\s]+([A-Za-z]{2})\s*$/);
-  if (m) {
-    const r = await fetch(`https://api.zippopotam.us/us/${m[2].toLowerCase()}/${encodeURIComponent(m[1].trim().toLowerCase())}`);
-    if (!r.ok) return null;
-    const j = await r.json(), p = j.places[0];
-    return { lat: +p.latitude, lon: +p.longitude, label: `${j['place name']}, ${j['state abbreviation']}` };
-  }
-  return null;
-}
+/* The box takes one of the covered cities only (the dropdown lists them); a start of a name is
+   enough ("hous" -> Houston). Anything else gets a note rather than a guess. */
 async function goTo(text) {
   const t = text.trim(); if (!t) return;
   const norm = s => s.toLowerCase().replace(/[^a-z]/g, '');
-  const exact = CITIES.find(c => norm(c.city) === norm(t)) || CITIES.find(c => norm(c.city).startsWith(norm(t)) && norm(t).length >= 3);
-  if (exact && !/^\d/.test(t)) { $('loc').value = ''; $('loc').blur(); return loadCity(exact.slug); }
-  let place = null;
-  try { place = await geocode(t); } catch (e) {}
-  if (!place) {
-    $('notes').querySelectorAll('.plain').forEach(n => n.remove());
-    return locNote(`Couldn't find “${esc(t)}”. Try a 5-digit zip, or a city with its state like “Boise, ID”.`);
-  }
-  const { c, d } = nearestCity(place);
+  const hit = CITIES.find(c => norm(c.city) === norm(t)) || CITIES.find(c => norm(c.city).startsWith(norm(t)) && norm(t).length >= 3);
+  $('notes').querySelectorAll('.plain').forEach(n => n.remove());
+  if (!hit) return locNote(`“${esc(t)}” isn't one of the covered cities. Pick one from the list as you type.`);
   $('loc').value = ''; $('loc').blur();
-  await loadCity(c.slug, { lat: place.lat, lon: place.lon, label: place.label }, place.zip || place.label);
-  if (d > 40) locNote(`${esc(place.label)} isn't in a covered area. The nearest is <b>${esc(c.city)}</b>, ${Math.round(d)} mi away; distances are from ${esc(place.label)}.`);
+  return loadCity(hit.slug);
 }
 
 /* ---------- routing: #m/<id> opens a movie, so Back works ---------- */
 let openedHere = false;
-function readHash() { const m = location.hash.match(/^#m\/(\d+)/); state.movie = m ? m[1] : null; }
+// Movie ids are cinemaclock's numbers, or "g…" for a film only Google listed (gfill.py).
+function readHash() { const m = location.hash.match(/^#m\/([\w-]+)/); state.movie = m ? m[1] : null; }
 function openMovie(mid) { openedHere = true; location.hash = 'm/' + mid; }
 function closeMovie() { if (openedHere) { openedHere = false; history.back(); } else location.hash = ''; }
 window.addEventListener('hashchange', () => { readHash(); render(); window.scrollTo({ top: 0 }); });
@@ -670,11 +758,11 @@ window.addEventListener('hashchange', () => { readHash(); render(); window.scrol
    Picking every theater in view is the same as picking none, so that collapses back to All. */
 function toggleTheater(id) {
   const p = state.picked;
-  for (const x of [...p]) if (!inView(x)) p.delete(x);
+  for (const x of [...p]) if (!inScope(x)) p.delete(x);
   if (id == null) p.clear();
   else if (p.has(id)) p.delete(id);
   else p.add(id);
-  if (p.size === DATA.theaters.filter(t => inView(t.id)).length) p.clear();
+  if (p.size === DATA.theaters.filter(t => inScope(t.id)).length) p.clear();
   render(); renderTheaterList(id);
 }
 $('dates').addEventListener('click', e => {
@@ -682,9 +770,16 @@ $('dates').addEventListener('click', e => {
   state.date = b.dataset.date; renderDates(); render();
 });
 $('theaters').addEventListener('click', e => {
+  if (e.target.closest('a')) return;            // a "not listed ↗" link opens; it doesn't pick the row
   const b = e.target.closest('[data-tid]'); if (!b) return;
   const id = b.dataset.tid || null;
   toggleTheater(id);
+});
+// Rows are role="button" divs, so give them the keyboard behaviour a <button> has.
+$('theaters').addEventListener('keydown', e => {
+  if ((e.key !== 'Enter' && e.key !== ' ') || e.target.closest('a')) return;
+  const b = e.target.closest('[data-tid]'); if (!b) return;
+  e.preventDefault(); toggleTheater(b.dataset.tid || null);
 });
 $('theaters').addEventListener('mouseover', e => { const b = e.target.closest('[data-tid]'); hover(b && b.dataset.tid || null); });
 $('theaters').addEventListener('mouseleave', () => hover(null));
@@ -701,6 +796,11 @@ $('main').addEventListener('click', e => {
 $('toolbar').addEventListener('change', e => {
   if (e.target.id === 'sort') { state.sort = e.target.value; store.set('sort2', state.sort); }
   if (e.target.id === 'after') { state.after = Number(e.target.value); store.set('after', state.after); }
+  render();
+});
+$('toolbar').addEventListener('click', e => {
+  const b = e.target.closest('[data-size]'); if (!b) return;
+  state.size = b.dataset.size; store.set('size', state.size);
   render();
 });
 
@@ -723,9 +823,9 @@ $('toolbar').addEventListener('change', e => {
   const params = new URLSearchParams(location.search);
   const saved = store.get('city', null);
   try {
-    if (params.get('near')) await goTo(params.get('near'));
-    else if (params.get('city') && CITIES.some(c => c.slug === params.get('city'))) await loadCity(params.get('city'));
-    else if (saved && CITIES.some(c => c.slug === saved.slug)) await loadCity(saved.slug, saved.origin, saved.zip);
+    // An old ?near=<zip> link, or a saved zip search, falls through to the saved city or the default.
+    if (params.get('city') && CITIES.some(c => c.slug === params.get('city'))) await loadCity(params.get('city'));
+    else if (saved && CITIES.some(c => c.slug === saved.slug)) await loadCity(saved.slug);
     else await loadCity(CITIES.some(c => c.slug === 'reno-nv') ? 'reno-nv' : CITIES[0].slug);
   } catch (e) {
     $('main').innerHTML = `<div class="empty">Could not load showtimes: ${esc(e.message)}</div>`;
