@@ -27,14 +27,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Restore ratings and poster cache
-        uses: actions/cache@v4
+      # The cache also holds gfill.json: the Google fills and this month's search count (gfill.py).
+      # Restore and save are separate steps so the save runs even when the build fails; otherwise a
+      # failed build would forget searches it already spent, and the next build would repeat them.
+      - name: Restore ratings, poster and Google-fill cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/showtimes
           key: ratings-${{ github.run_id }}
           restore-keys: ratings-
       - name: Build site (every city in cities.txt)
+        env:
+          # Google fill keys, for builds of main only: a test run from another branch would spend
+          # searches into a cache main never sees. Unset = cinemaclock only.
+          SERPAPI_KEY: ${{ github.ref == 'refs/heads/main' && secrets.SERPAPI_KEY || '' }}
+          SEARCHAPI_KEY: ${{ github.ref == 'refs/heads/main' && secrets.SEARCHAPI_KEY || '' }}
         run: python showtimes.py --site _site
+      - name: Save ratings, poster and Google-fill cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/showtimes
+          key: ratings-${{ github.run_id }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
