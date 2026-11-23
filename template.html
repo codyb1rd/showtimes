@@ -241,6 +241,26 @@ main { padding: 0 0 60px; }
 .hero .ratings { font-size: 14px; margin: 8px 0 4px; gap: 14px; }
 .cast { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .more { font-size: 13px; color: var(--muted); margin-top: 6px; display: inline-block; }
+/* Details: a button that opens the description, director and cast under the poster row. */
+.dbtn { display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; padding: 0; cursor: pointer; font: inherit; font-size: 13px; color: var(--accent); }
+.dbtn svg { width: 13px; height: 13px; transition: transform .12s ease; }
+.dbtn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dbtn:hover { text-decoration: underline; }
+.dbtn:focus { outline: none; }
+.dbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.hlinks { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 16px; }
+.dinfo { padding: 0 16px 14px; font-size: 14px; line-height: 1.5; }
+.dinfo p { margin: 0 0 10px; }
+.drow { margin-top: 4px; color: var(--ink); }
+.dl { color: var(--muted); margin-right: 6px; }
+/* Tap the poster on a film's page for the full-size poster on a dark screen. */
+.hero .art.zoom { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,.95); display: flex; align-items: center;
+  justify-content: center; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); cursor: zoom-out; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.lbclose { position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; width: 40px; height: 40px; border-radius: 50%;
+  border: 0; background: rgba(255,255,255,.16); color: #fff; font-size: 20px; line-height: 1; cursor: pointer; }
+.lbclose:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 .venue { border-top: 1px solid var(--line); padding: 10px 14px 12px; }
 .vname { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
@@ -346,6 +366,9 @@ a.time:hover { border-color: var(--accent); background: var(--accent-soft); }
   </div>
   <div class="bar" id="toolbar"></div>
   <div class="menu" id="menu" role="listbox" hidden></div>
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Poster" hidden>
+    <img id="lbimg" alt=""><button type="button" class="lbclose" id="lbclose" aria-label="Close poster">✕</button>
+  </div>
   <main id="main"></main>
 </div>
 
@@ -385,6 +408,7 @@ const state = {
   picked: new Set(),  // theater ids to show; empty means all
   fold: new Set(store.get('fold', [])),   // theaters folded to their header in the Theaters view (remembered)
   whereOpen: store.get('where', false),   // phones: map + theater list open (true) or folded into one line
+  infoFor: null,      // the film whose Details are open on its page (closed again for any other film)
   inView: null,       // theater ids inside the map view; null when every theater is in view
   origin: null        // {lat, lon, label}: the city's center (its nearest theater), for the start view
 };
@@ -671,13 +695,18 @@ function renderDetail(mid) {
   const after = state.after ? ' after ' + AFTER.find(a => a[0] === state.after)[1] : '';
   const where = livePicks.size === 1 ? ' at ' + esc(theaterById[[...livePicks][0]].name)
     : livePicks.size ? ' at the theaters you picked' : state.inView ? ' in the map view' : '';
+  // Details opens in place: description, director and top-billed cast (from the build; none for
+  // events and films only Google listed, which then show no Details button).
+  const stars = m.stars || [], hasInfo = !!(m.desc || m.director || stars.length), open = hasInfo && state.infoFor === mid;
+  const info = !open ? '' : `<div class="dinfo" id="dinfo">${m.desc ? `<p>${esc(m.desc)}</p>` : ''}` +
+    (m.director ? `<div class="drow"><span class="dl">Directed by</span>${esc(m.director)}</div>` : '') +
+    (stars.length ? `<div class="drow"><span class="dl">Starring</span>${esc(stars.join(', '))}</div>` : '') + '</div>';
   return `<button class="back" id="back">‹ All movies</button>
-    <article class="card"><div class="hero">${art(m)}<div>
+    <article class="card"><div class="hero">${art(m, m.poster ? 'zoom' : '')}<div>
       <h2>${esc(m.title)}</h2><div class="meta">${metaLine(m, true)}</div>${ratings(m, true)}
-      ${m.cast ? `<div class="cast">${esc(m.cast)}</div>` : ''}
-      <a class="more" href="${esc(m.url)}" target="_blank" rel="noopener">Details &amp; trailer ›</a>
-      · <a class="more chk" href="${esc(movieCheck(m))}" target="_blank" rel="noopener">${m.rt && m.rt.tix ? 'All theaters on Fandango' : 'More showtimes on Google'} ↗</a>
-    </div></div>${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>`;
+      ${m.cast && !stars.length ? `<div class="cast">${esc(m.cast)}</div>` : ''}
+      <div class="hlinks">${hasInfo ? `<button type="button" class="more dbtn" id="dtoggle" aria-expanded="${open}" aria-controls="dinfo">Details${CARET}</button>` : ''}<a class="more chk" href="${esc(movieCheck(m))}" target="_blank" rel="noopener">${m.rt && m.rt.tix ? 'All theaters on Fandango' : 'More showtimes on Google'} ↗</a></div>
+    </div></div>${info}${venues || `<div class="none">No upcoming showings${where} ${state.date === today ? 'left today' : 'this day'}${after}.</div>`}</article>`;
 }
 function renderTheaters() {
   const byT = groupBy(visibleGroups(), 'tid');
@@ -1119,8 +1148,37 @@ $('main').addEventListener('keydown', e => {
   if ((e.key !== 'Enter' && e.key !== ' ') || e.target.closest('a')) return;
   const h = e.target.closest('[data-fold]'); if (h) { e.preventDefault(); toggleFold(h.dataset.fold); }
 });
+/* Full-size poster: shows the page's own small poster at once, then swaps in the big one (m.big,
+   from the build) when it has loaded. The phone's Back button closes it rather than the film. */
+function openPoster(mid) {
+  const m = DATA.movies[mid], lb = $('lightbox'), img = $('lbimg');
+  img.src = m.poster; img.alt = m.title + ' poster'; img.dataset.mid = mid;
+  if (m.big) {
+    const hi = new Image();
+    hi.onload = () => { if (!lb.hidden && img.dataset.mid === mid) img.src = m.big; };
+    hi.src = m.big;
+  }
+  lb.hidden = false; document.documentElement.style.overflow = 'hidden';
+  history.pushState({ poster: true }, '');
+  $('lbclose').focus({ preventScroll: true });
+}
+function closePoster(fromBack) {
+  if ($('lightbox').hidden) return;
+  $('lightbox').hidden = true; document.documentElement.style.overflow = '';
+  if (!fromBack && history.state && history.state.poster) history.back();
+}
+window.addEventListener('popstate', () => closePoster(true));
+$('lightbox').addEventListener('click', () => closePoster());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePoster(); });
 $('main').addEventListener('click', e => {
   if (e.target.closest('#back')) return closeMovie();
+  if (e.target.closest('#dtoggle')) {
+    state.infoFor = state.infoFor === state.movie ? null : state.movie; render();
+    // Re-drawing drops keyboard focus; put it back for keyboard use (a tap has e.detail > 0).
+    const b = $('dtoggle'); if (b && e.detail === 0) b.focus({ preventScroll: true });
+    return;
+  }
+  if (e.target.closest('.hero .art.zoom')) return openPoster(state.movie);
   const h = e.target.closest('[data-fold]');
   if (h) { if (!e.target.closest('a')) toggleFold(h.dataset.fold); return; }
   const t = e.target.closest('[data-mid]'); if (t) openMovie(t.dataset.mid);

@@ -327,6 +327,60 @@ def add_ratings(movies, ex):
         pass
 
 
+DETAILS_TTL = 14 * 86400   # a film's description and cast don't change; re-read fortnightly
+STARS = 6                  # top-billed actors kept
+
+
+def film_details(slug):
+    """Description, director and top-billed cast from a film's cinemaclock page (the page's own
+    "Details" panel shows these). None when the page doesn't exist."""
+    try:
+        page = fetch(f"{BASE}/movies/{slug}")
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return None
+        raise
+    desc = re.search(r'itemprop="description"[^>]*>(.*?)</', page, re.S)
+    director = re.search(r'Directed by\s*</td>\s*<td class="desc2">(.*?)</td>', page, re.S)
+    stars = [text(s) for s in re.findall(r'class="acname"[^>]*>(.*?)</span>', page, re.S)]
+    v = {"desc": text(desc.group(1))[:1200] if desc else "",
+         "director": text(director.group(1)) if director else "",
+         "stars": [s for s in dict.fromkeys(stars) if s][:STARS]}
+    return v if any(v.values()) else None   # an unknown film comes back as an empty page, not a 404
+
+
+def add_details(movies, ex):
+    """Attach desc / director / stars to each cinemaclock film (Google-only films have no page),
+    cached beside the ratings. A failed read is left blank and not cached, so the next build retries."""
+    try:
+        cache = json.loads(CACHE.read_text())
+    except Exception:
+        cache = {}
+    now = dt.datetime.now().timestamp()
+    jobs = {}
+    for mid, m in movies.items():
+        if not m.get("slug"):
+            continue
+        c = cache.get(f"cc:{m['slug']}")
+        if c and now - c["t"] < (DETAILS_TTL if c["v"] else MISS_TTL):
+            m.update(c["v"] or {})
+        else:
+            jobs[ex.submit(film_details, m["slug"])] = mid
+    for f in cf.as_completed(jobs):
+        mid = jobs[f]
+        try:
+            v = f.result()
+        except Exception:
+            continue
+        movies[mid].update(v or {})
+        cache[f"cc:{movies[mid]['slug']}"] = {"t": now, "v": v}
+    try:
+        CACHE.parent.mkdir(parents=True, exist_ok=True)
+        CACHE.write_text(json.dumps(cache))
+    except Exception:
+        pass
+
+
 POSTERS = CACHE.parent / "posters"
 
 
@@ -338,6 +392,21 @@ def poster_for(mid, m):
         return f.read_bytes()
     url = m["poster"] or fallback_poster(m)
     return poster_bytes(mid, url) if url else b""
+
+
+def big_poster(m):
+    """Full-size poster address for the page's full-screen view. The page loads it only when the
+    poster is tapped, so it isn't saved with the site: cinemaclock's 1000x1500 copy of its thumbnail,
+    else the RT or Letterboxd poster (RT's original rather than its small resize). Same source order
+    as poster_for."""
+    url = m["poster"]
+    if url:
+        return BASE + url.replace("/140x210/", "/1000x1500/") if url.startswith("/") else url
+    for site in ("rt", "lb"):
+        img = (m.get(site) or {}).get("img") or ""
+        if img:
+            return img.split("/v2/", 1)[1] if "resizing.flixster.com" in img and "/v2/http" in img else img
+    return ""
 
 
 def poster_bytes(mid, url):
@@ -413,9 +482,13 @@ def build_cities(slugs, radius, cap, no_ratings=False, workers=4, log=print):
             add_ratings(google_only, ex)
             for mid, m in google_only.items():
                 movies[mid].update({k: m[k] for k in ("rt", "lb") if k in m})
+            add_details(movies, ex)
+            log(f"details: {sum(1 for m in movies.values() if m.get('desc') or m.get('stars'))}/{len(movies)} films")
         posters = {mid: ex.submit(poster_for, mid, m) for mid, m in movies.items()}
         images = {mid: f.result() for mid, f in posters.items()}
         log(f"posters: {sum(1 for v in images.values() if v)}/{len(movies)} films")
+        for mid, m in movies.items():
+            m["big"] = big_poster(m) if images.get(mid) else ""
 
     for m in movies.values():
         if m["slug"]:                 # a film only Google listed has no cinemaclock page; gfill set its url
