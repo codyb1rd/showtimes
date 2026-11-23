@@ -9,7 +9,8 @@ film, so those chains are only searched when cinemaclock has dropped their listi
 What it does each build, for the cities in FILL:
   1. Theater fills. Each target theater (see is_target) gets one Google search when its stored
      result is stale (see _stale); a result is 7 days of showtimes and is kept in the state file.
-     A search that finds nothing usable is stored as a miss and retried after MISS_DAYS.
+     A search that finds nothing usable is stored as a miss and retried after MISS_DAYS, waiting
+     longer after each repeat miss (museums and closed theaters never get Google showtimes).
   2. Merge. For a filled theater, on each day Google covers: a day cinemaclock has nothing for takes
      Google's schedule; a film both list takes Google's times while the result is at most
      OVERRIDE_DAYS old (cinemaclock's ticket link kept where a time matches); a film only Google
@@ -41,7 +42,13 @@ FILL = {
 }
 REFRESH_DAYS = 7      # a search covers 7 days; schedules change little within a published week
 SHORT_DAYS = 2        # ...but search again sooner (once it is this old) if Google covered < 5 days ahead
-MISS_DAYS = 3         # a search that found nothing usable is retried after this many days
+MISS_DAYS = (3, 7, 14, 30)   # days before retrying a search that found nothing: after the 1st miss,
+                             # the 2nd, the 3rd, and every later one. On the first live build 8 of 18
+                             # theaters (museums, a campus cinema, closed theaters) had no Google showtimes.
+
+
+def miss_wait(entry):
+    return MISS_DAYS[min(entry.get("misses", 1), len(MISS_DAYS)) - 1]
 OVERRIDE_DAYS = 3     # Google's times replace cinemaclock's for a film only while this fresh
 RUN_CAP = 30          # searches one build may spend
 MONTH_CAP = 120       # searches a calendar month may spend (free plans: SerpApi 250, SearchApi.io 100)
@@ -398,14 +405,14 @@ def _age(entry, today):
 
 
 def _stale(entry, today):
-    """Search again when: never searched; a miss older than MISS_DAYS; a result older than
+    """Search again when: never searched; a miss older than its wait (miss_wait); a result older than
     REFRESH_DAYS; or a short result (Google gave fewer than 6 days, e.g. before the next week's
     times were posted) older than SHORT_DAYS. A normal result covers its search day + 6."""
     age = _age(entry, today)
     if age is None:
         return True
     if entry.get("none"):
-        return age >= MISS_DAYS
+        return age >= miss_wait(entry)
     last = max(entry["days"], default="")
     short = last < (dt.date.fromisoformat(entry["fetched"]) + dt.timedelta(5)).isoformat()
     return age >= REFRESH_DAYS or (short and age >= SHORT_DAYS)
@@ -431,9 +438,13 @@ def _fill_city(city, location, today, parsed, movies, by_key, state, budget, log
                     if resp.get("showtimes") and kg and same_theater(kg, t["name"]):
                         entry = {"fetched": today.isoformat(), "via": provider, **theater_schedule(resp, today)}
                     else:
+                        misses = entry.get("misses", 1) + 1 if entry and entry.get("none") else 1
+                        why = (("showtimes for another name: " + kg) if resp.get("showtimes") and kg
+                               else (kg + ", no showtimes") if kg else "no showtimes" if resp else "error")
                         entry = {"fetched": today.isoformat(), "via": provider, "none": True, "days": {},
-                                 "links": {}, "got": kg or ("no showtimes" if resp else "error")}
-                        log(f"  Google fill: nothing usable for {t['name']} ({entry['got']}); retry in {MISS_DAYS} days")
+                                 "links": {}, "got": why, "misses": misses}
+                        log(f"  Google fill: nothing usable for {t['name']} ({why}); "
+                            f"miss {misses}, retry in {miss_wait(entry)} days")
                     state["theaters"][t["slug"]] = entry
             if not entry or entry.get("none") or _age(entry, today) >= REFRESH_DAYS:
                 continue
